@@ -1,0 +1,23 @@
+id = "spacelinks"
+name = "Space Links"
+version = "0.1.0"
+min_herdr_version = "0.9.3"
+description = "Per-Space web links in the herdr sidebar"
+platforms = ["macos", "linux", "windows"]
+
+[[actions]]
+id = "open"
+title = "Space links"
+contexts = ["workspace"]
+command = ["node", "spacelinks.js", "open"]
+
+[[panes]]
+id = "panel"
+title = "Space links"
+placement = "popup"
+width = "70%"
+height = 20
+command = ["node", "spacelinks.js", "panel"]
+
+[[startup]]
+command = ["node", "spacelinks.js", "apply"]
