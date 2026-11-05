@@ -21,7 +21,19 @@ default browser.
 - herdr ≥ 0.9.3
 - Node.js ≥ 18 (`node` on `PATH`)
 
-## Install (local checkout)
+## Install
+
+### From GitHub (any machine)
+
+```bash
+herdr plugin install giacomorebonato/herdr-spacelinks
+```
+
+(This repo is private; the machine needs access — an SSH key or `gh auth`
+for the `giacomorebonato` account.) Update later with `herdr plugin update
+spacelinks`.
+
+### From a local checkout
 
 ```bash
 herdr plugin link /path/to/herdr-spacelinks
