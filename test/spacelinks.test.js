@@ -147,9 +147,19 @@ test('openAction writes pending.json and opens the panel pane', () => {
   sl.openAction(d, 'w2', 'web-dashboard', (args) => sl.herdrRun(args));
   delete process.env.HERDR_BIN_PATH;
   const pending = JSON.parse(fs.readFileSync(path.join(d, 'pending.json'), 'utf8'));
-  assert.deepEqual(pending, { workspaceId: 'w2', label: 'web-dashboard' });
+  assert.deepEqual(pending, { workspaceId: 'w2', label: 'web-dashboard', mode: 'open' });
   const calls = fs.readFileSync(path.join(d, 'calls.log'), 'utf8');
   assert.match(calls, /plugin pane open --plugin spacelinks --entrypoint panel/);
+});
+test('openAction mode=add pre-arms the popup', () => {
+  const d = tmp();
+  const stub = makeStub(d, '{}');
+  process.env.HERDR_BIN_PATH = stub;
+  sl.openAction(d, 'w2', 'web', (args) => sl.herdrRun(args), 'add');
+  delete process.env.HERDR_BIN_PATH;
+  const pending = JSON.parse(fs.readFileSync(path.join(d, 'pending.json'), 'utf8'));
+  assert.deepEqual(pending, { workspaceId: 'w2', label: 'web', mode: 'add' });
+  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /plugin pane open/);
 });
 test('openAction throws on herdr failure', () => {
   const d = tmp();

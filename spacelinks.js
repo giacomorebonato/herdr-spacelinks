@@ -187,8 +187,8 @@ function applyAll(stateDir, run) {
   return { reported, failed };
 }
 
-function openAction(stateDir, workspaceId, label, run) {
-  const pending = { workspaceId, label: label || workspaceId };
+function openAction(stateDir, workspaceId, label, run, mode = 'open') {
+  const pending = { workspaceId, label: label || workspaceId, mode: mode === 'add' ? 'add' : 'open' };
   fs.mkdirSync(stateDir, { recursive: true });
   const tmpPending = path.join(stateDir, 'pending.json.tmp');
   fs.writeFileSync(tmpPending, `${JSON.stringify(pending)}\n`);
@@ -540,6 +540,20 @@ module.exports = {
 
 if (require.main === module) {
   const cmd = process.argv[2];
+  const openFromContext = (mode) => {
+    let workspaceId;
+    let label;
+    try {
+      const context = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || '{}');
+      workspaceId = context.workspace_id;
+      label = context.workspace_label;
+    } catch {
+      workspaceId = undefined;
+    }
+    if (!workspaceId) throw new Error('cannot resolve current space from context');
+    openAction(stateDir(), workspaceId, label, herdrRun, mode);
+    process.exit(0);
+  };
   try {
     if (cmd === 'apply') {
       const { reported, failed } = applyAll(stateDir(), herdrRun);
@@ -550,18 +564,12 @@ if (require.main === module) {
       process.exit(0);
     }
     if (cmd === 'open') {
-      let workspaceId;
-      let label;
-      try {
-        const context = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || '{}');
-        workspaceId = context.workspace_id;
-        label = context.workspace_label;
-      } catch {
-        workspaceId = undefined;
-      }
-      if (!workspaceId) throw new Error('cannot resolve current space from context');
-      openAction(stateDir(), workspaceId, label, herdrRun);
-      process.exit(0);
+      openFromContext('open');
+      return;
+    }
+    if (cmd === 'add') {
+      openFromContext('add');
+      return;
     }
     if (cmd === 'panel') {
       panelMain({ env: process.env })

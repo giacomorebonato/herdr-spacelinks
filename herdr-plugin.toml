@@ -11,6 +11,12 @@ title = "Space links"
 contexts = ["workspace"]
 command = ["node", "spacelinks.js", "open"]
 
+[[actions]]
+id = "add"
+title = "Add space link"
+contexts = ["workspace"]
+command = ["node", "spacelinks.js", "add"]
+
 [[panes]]
 id = "panel"
 title = "Space links"
