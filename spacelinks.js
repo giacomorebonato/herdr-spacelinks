@@ -150,6 +150,19 @@ function applyAll(stateDir, run) {
   return { reported, failed };
 }
 
+function openAction(stateDir, workspaceId, label, run) {
+  const pending = { workspaceId, label: label || workspaceId };
+  fs.mkdirSync(stateDir, { recursive: true });
+  const tmpPending = path.join(stateDir, 'pending.json.tmp');
+  fs.writeFileSync(tmpPending, `${JSON.stringify(pending)}\n`);
+  fs.renameSync(tmpPending, path.join(stateDir, 'pending.json'));
+  const res = run(['plugin', 'pane', 'open', '--plugin', 'spacelinks', '--entrypoint', 'panel']);
+  if (res.status !== 0) {
+    const detail = (res.stderr && res.stderr.trim()) || 'no stderr';
+    throw new Error(`popup already open, or server busy: ${detail}`);
+  }
+}
+
 module.exports = {
   stateDir,
   readState,
@@ -164,6 +177,7 @@ module.exports = {
   herdrRun,
   reportTokens,
   applyAll,
+  openAction,
 };
 
 if (require.main === module) {
@@ -175,6 +189,20 @@ if (require.main === module) {
         console.error(`spacelinks apply: ${failed} workspace report(s) failed (${reported} ok)`);
         process.exit(1);
       }
+      process.exit(0);
+    }
+    if (cmd === 'open') {
+      let workspaceId;
+      let label;
+      try {
+        const context = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || '{}');
+        workspaceId = context.workspace_id;
+        label = context.workspace_label;
+      } catch {
+        workspaceId = undefined;
+      }
+      if (!workspaceId) throw new Error('cannot resolve current space from context');
+      openAction(stateDir(), workspaceId, label, herdrRun);
       process.exit(0);
     }
     console.error(`spacelinks: unknown subcommand ${JSON.stringify(cmd)}`);
