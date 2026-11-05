@@ -101,6 +101,55 @@ function planReport(links) {
   return { sets, clears };
 }
 
+const { spawnSync } = require('node:child_process');
+
+function herdrRun(args, opts = {}) {
+  const bin = process.env.HERDR_BIN_PATH || 'herdr';
+  return spawnSync(bin, args, {
+    encoding: 'utf8',
+    env: { ...process.env, ...opts.env },
+  });
+}
+
+function reportTokens(workspaceId, links, run) {
+  const { sets, clears } = planReport(links);
+  const args = ['workspace', 'report-metadata', workspaceId, '--source', 'plugin:spacelinks'];
+  for (const s of sets) args.push('--token', `${s.name}=${s.value}`);
+  for (const c of clears) args.push('--clear-token', c);
+  const res = run(args);
+  if (res.status !== 0) throw new Error((res.stderr && res.stderr.trim()) || 'workspace report-metadata failed');
+}
+
+function applyAll(stateDir, run) {
+  const state = readState(stateDir);
+  if (Object.keys(state).length === 0) return { reported: 0, failed: 0 };
+  const listRes = run(['workspace', 'list']);
+  if (listRes.status !== 0) {
+    throw new Error((listRes.stderr && listRes.stderr.trim()) || 'workspace list failed');
+  }
+  let workspaces;
+  try {
+    workspaces = JSON.parse(listRes.stdout).result.workspaces;
+  } catch {
+    throw new Error('unexpected workspace list output');
+  }
+  let reported = 0;
+  let failed = 0;
+  for (const ws of workspaces) {
+    const entry = state[ws.workspace_id];
+    if (!entry) continue;
+    try {
+      reportTokens(ws.workspace_id, linksFor(state, ws.workspace_id), run);
+      reported += 1;
+    } catch {
+      failed += 1;
+    }
+    entry.label = ws.label;
+  }
+  writeState(stateDir, state);
+  return { reported, failed };
+}
+
 module.exports = {
   stateDir,
   readState,
@@ -112,4 +161,26 @@ module.exports = {
   addLink,
   removeLink,
   planReport,
+  herdrRun,
+  reportTokens,
+  applyAll,
 };
+
+if (require.main === module) {
+  const cmd = process.argv[2];
+  try {
+    if (cmd === 'apply') {
+      const { reported, failed } = applyAll(stateDir(), herdrRun);
+      if (failed > 0) {
+        console.error(`spacelinks apply: ${failed} workspace report(s) failed (${reported} ok)`);
+        process.exit(1);
+      }
+      process.exit(0);
+    }
+    console.error(`spacelinks: unknown subcommand ${JSON.stringify(cmd)}`);
+    process.exit(1);
+  } catch (err) {
+    console.error(`spacelinks: ${err.message}`);
+    process.exit(1);
+  }
+}

@@ -59,3 +59,57 @@ test('planReport: 3 links → 3 sets, 11 clears; [] → 14 clears; values ≤80'
   assert.equal(none.sets.length, 0); assert.equal(none.clears.length, 14);
   for (const s of three.sets) assert.ok(Array.from(s.value).length <= 80);
 });
+
+const makeStub = (dir, out, fail) => {
+  const p = path.join(dir, 'herdr-stub.sh');
+  const body = fail
+    ? 'echo "boom" >&2; exit 1'
+    : "cat <<'EOF'\n" + out + '\nEOF';
+  fs.writeFileSync(p, '#!/bin/sh\necho "$@" >> "' + dir + '/calls.log"\n' + body + '\n');
+  fs.chmodSync(p, 0o755);
+  return p;
+};
+const LIST = JSON.stringify({ result: { type: 'workspace_list', workspaces: [
+  { workspace_id: 'w1', label: 'web-dashboard' },
+] } });
+
+test('applyAll reports live workspaces with stored links', () => {
+  const d = tmp();
+  const state = {
+    w1: { label: 'old', links: [{ title: 'My repo', url: 'https://github.com/org/repo' }] },
+    w9: { label: 'gone', links: [{ title: 'X', url: 'https://x.dev' }] },
+  };
+  sl.writeState(d, state);
+  const stub = makeStub(d, LIST);
+  process.env.HERDR_BIN_PATH = stub;
+  const run = (args) => sl.herdrRun(args);
+  const result = sl.applyAll(d, run);
+  delete process.env.HERDR_BIN_PATH;
+  assert.deepEqual(result, { reported: 1, failed: 0 });
+  const calls = fs.readFileSync(path.join(d, 'calls.log'), 'utf8').trim().split('\n');
+  const reports = calls.filter((c) => c.includes('report-metadata'));
+  assert.equal(reports.length, 1);
+  assert.match(reports[0], /--source plugin:spacelinks/);
+  assert.match(reports[0], /--clear-token spacelink_14/);
+  assert.equal(sl.readState(d).w1.label, 'web-dashboard');
+});
+test('applyAll counts failures without throwing', () => {
+  const d = tmp();
+  sl.writeState(d, { w1: { label: 'web', links: [{ title: 'A', url: 'https://a.dev' }] } });
+  const p = path.join(d, 'herdr-stub.sh');
+  fs.writeFileSync(p, `#!/bin/sh\ncase "$*" in *report-metadata*) echo "boom" >&2; exit 1;; esac\ncat <<'EOF'\n${LIST}\nEOF\n`);
+  fs.chmodSync(p, 0o755);
+  process.env.HERDR_BIN_PATH = p;
+  const result = sl.applyAll(d, (args) => sl.herdrRun(args));
+  delete process.env.HERDR_BIN_PATH;
+  assert.deepEqual(result, { reported: 0, failed: 1 });
+});
+test('applyAll with empty state never calls herdr', () => {
+  const d = tmp();
+  const stub = makeStub(d, LIST);
+  process.env.HERDR_BIN_PATH = stub;
+  const result = sl.applyAll(d, (args) => sl.herdrRun(args));
+  delete process.env.HERDR_BIN_PATH;
+  assert.deepEqual(result, { reported: 0, failed: 0 });
+  assert.equal(fs.existsSync(path.join(d, 'calls.log')), false);
+});
