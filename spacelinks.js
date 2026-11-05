@@ -101,7 +101,8 @@ function planReport(links) {
   return { sets, clears };
 }
 
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
+const readline = require('node:readline');
 
 function herdrRun(args, opts = {}) {
   const bin = process.env.HERDR_BIN_PATH || 'herdr';
@@ -163,6 +164,186 @@ function openAction(stateDir, workspaceId, label, run) {
   }
 }
 
+function parseCommand(line) {
+  const t = String(line || '').trim().toLowerCase();
+  if (t === '') return { op: 'redraw' };
+  if (t === 'a') return { op: 'add' };
+  if (t === 'q' || t === 'quit') return { op: 'quit' };
+  if (/^\d+$/.test(t)) return { op: 'open', n: parseInt(t, 10) };
+  const m = t.match(/^d\s+(\d+)$/);
+  if (m) return { op: 'delete', n: parseInt(m[1], 10) };
+  return { op: 'error', message: 'unknown command — a=add, <n>=open, d <n>=delete, q=close' };
+}
+
+function openExternal(url) {
+  const child = process.platform === 'darwin'
+    ? spawn('open', [url], { detached: true, stdio: 'ignore' })
+    : process.platform === 'win32'
+      ? spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' })
+      : spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
+  child.unref();
+}
+
+function panelFrame(workspaceId, label, links, error) {
+  const rows = [];
+  rows.push('\x1b[2J\x1b[H');
+  rows.push(`Space links — ${label} (${workspaceId})`);
+  rows.push('');
+  if (links.length === 0) {
+    rows.push('  (none yet)');
+  } else {
+    links.forEach((link, i) => {
+      const text = `${i + 1}. ↳ ${link.title}`;
+      rows.push(`  \x1b]8;;${link.url}\x1b\\${text}\x1b]8;;\x1b\\`);
+    });
+  }
+  rows.push('');
+  rows.push('a — add · <n> — open · d <n> — delete · q — close');
+  if (error) rows.push(`✗ ${error}`);
+  rows.push('');
+  return rows.join('\n');
+}
+
+function resolveTarget(dir, env) {
+  try {
+    const pending = JSON.parse(fs.readFileSync(path.join(dir, 'pending.json'), 'utf8'));
+    if (pending && pending.workspaceId) {
+      return { workspaceId: pending.workspaceId, label: pending.label || pending.workspaceId };
+    }
+  } catch { /* fall through */ }
+  try {
+    const context = JSON.parse(env.HERDR_PLUGIN_CONTEXT_JSON || '{}');
+    if (context && context.workspace_id) {
+      return { workspaceId: context.workspace_id, label: context.workspace_label || context.workspace_id };
+    }
+  } catch { /* fall through */ }
+  throw new Error('cannot resolve current space');
+}
+
+async function panelMain(opts = {}) {
+  const env = opts.env || process.env;
+  const input = opts.stdin || process.stdin;
+  const output = opts.stdout || process.stdout;
+  const dir = env.HERDR_PLUGIN_STATE_DIR;
+  if (!dir) throw new Error('HERDR_PLUGIN_STATE_DIR is not set');
+  const { workspaceId, label } = resolveTarget(dir, env);
+
+  let state;
+  try {
+    state = readState(dir);
+  } catch {
+    output.write('links.json is corrupt — fix or remove it\n');
+    process.exit(1);
+  }
+
+  const rl = readline.createInterface({ input, output, terminal: false });
+  const pendingLines = [];
+  let lineWaiter = null;
+  rl.on('line', (l) => {
+    if (lineWaiter) {
+      const w = lineWaiter;
+      lineWaiter = null;
+      w(l);
+    } else {
+      pendingLines.push(l);
+    }
+  });
+  rl.on('close', () => {
+    if (lineWaiter) {
+      const w = lineWaiter;
+      lineWaiter = null;
+      w(null);
+    }
+  });
+  const ask = (prompt) => new Promise((resolve) => {
+    output.write(prompt);
+    if (pendingLines.length > 0) {
+      resolve(pendingLines.shift());
+      return;
+    }
+    lineWaiter = (l) => resolve(l);
+  });
+  const askOrQuit = async (prompt) => {
+    const answer = await ask(prompt);
+    if (answer === null) {
+      rl.close();
+      return { eof: true, answer: '' };
+    }
+    return { eof: false, answer };
+  };
+  let error = null;
+
+  const persistAndReport = (links) => {
+    state[workspaceId] = { label, links };
+    writeState(dir, state);
+    try {
+      reportTokens(workspaceId, links, herdrRun);
+      error = null;
+    } catch (err) {
+      error = err.message;
+    }
+  };
+
+  for (;;) {
+    output.write(panelFrame(workspaceId, label, linksFor(state, workspaceId), error));
+    const menu = await askOrQuit('> ');
+    if (menu.eof) return;
+    const cmd = parseCommand(menu.answer);
+    if (cmd.op === 'quit') {
+      rl.close();
+      return;
+    }
+    if (cmd.op === 'redraw') {
+      continue;
+    }
+    if (cmd.op === 'error') {
+      error = cmd.message;
+      continue;
+    }
+    if (cmd.op === 'add') {
+      const t = await askOrQuit('Title (Enter = derive from URL): ');
+      if (t.eof) return;
+      const title = String(t.answer).trim();
+      const first = await askOrQuit('URL: ');
+      if (first.eof) return;
+      let urlLine = String(first.answer).trim();
+      for (;;) {
+        if (urlLine === '') break;
+        const result = addLink(linksFor(state, workspaceId), title, urlLine);
+        if (!result.ok) {
+          output.write(`✗ ${result.message}\n`);
+          const retry = await askOrQuit('URL: ');
+          if (retry.eof) return;
+          urlLine = String(retry.answer).trim();
+          continue;
+        }
+        persistAndReport(result.links);
+        break;
+      }
+      continue;
+    }
+    if (cmd.op === 'open') {
+      const links = linksFor(state, workspaceId);
+      if (cmd.n < 1 || cmd.n > links.length) {
+        error = `no link ${cmd.n}`;
+        continue;
+      }
+      openExternal(links[cmd.n - 1].url);
+      rl.close();
+      return;
+    }
+    if (cmd.op === 'delete') {
+      const result = removeLink(linksFor(state, workspaceId), cmd.n);
+      if (!result.ok) {
+        error = result.message;
+        continue;
+      }
+      persistAndReport(result.links);
+      continue;
+    }
+  }
+}
+
 module.exports = {
   stateDir,
   readState,
@@ -178,6 +359,9 @@ module.exports = {
   reportTokens,
   applyAll,
   openAction,
+  parseCommand,
+  openExternal,
+  panelMain,
 };
 
 if (require.main === module) {
@@ -204,6 +388,15 @@ if (require.main === module) {
       if (!workspaceId) throw new Error('cannot resolve current space from context');
       openAction(stateDir(), workspaceId, label, herdrRun);
       process.exit(0);
+    }
+    if (cmd === 'panel') {
+      panelMain({ env: process.env })
+        .then(() => process.exit(0))
+        .catch((err) => {
+          console.error(`spacelinks: ${err.message}`);
+          process.exit(1);
+        });
+      return;
     }
     console.error(`spacelinks: unknown subcommand ${JSON.stringify(cmd)}`);
     process.exit(1);

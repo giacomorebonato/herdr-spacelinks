@@ -132,3 +132,18 @@ test('openAction throws on herdr failure', () => {
   assert.throws(() => sl.openAction(d, 'w2', 'web', (args) => sl.herdrRun(args)), /boom|popup/);
   delete process.env.HERDR_BIN_PATH;
 });
+
+test('parseCommand dispatches every op', () => {
+  assert.deepEqual(sl.parseCommand(''), { op: 'redraw' });
+  assert.deepEqual(sl.parseCommand('  '), { op: 'redraw' });
+  assert.deepEqual(sl.parseCommand('a'), { op: 'add' });
+  assert.deepEqual(sl.parseCommand(' A '), { op: 'add' });
+  assert.deepEqual(sl.parseCommand('q'), { op: 'quit' });
+  assert.deepEqual(sl.parseCommand('quit'), { op: 'quit' });
+  assert.deepEqual(sl.parseCommand('3'), { op: 'open', n: 3 });
+  assert.deepEqual(sl.parseCommand(' d 12 '), { op: 'delete', n: 12 });
+  assert.deepEqual(sl.parseCommand('D 12'), { op: 'delete', n: 12 });
+  const bad = sl.parseCommand('xyz');
+  assert.equal(bad.op, 'error');
+  assert.match(bad.message, /unknown command/);
+});
