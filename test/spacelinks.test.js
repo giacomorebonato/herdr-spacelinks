@@ -173,3 +173,71 @@ test('parseCommand dispatches every op', () => {
   assert.equal(bad.op, 'error');
   assert.match(bad.message, /unknown command/);
 });
+
+// --- Task 2: panel split, line-mode fallback behaviors ---
+const { spawnSync: cpSpawnSync } = require('node:child_process');
+const ROOT = path.join(__dirname, '..');
+
+function runPanel(d, input, extraEnv = {}) {
+  return cpSpawnSync(process.execPath, [path.join(ROOT, 'spacelinks.js'), 'panel'], {
+    input,
+    encoding: 'utf8',
+    env: { ...process.env, HERDR_PLUGIN_STATE_DIR: d, ...extraEnv },
+  });
+}
+
+test('panel line mode: add-mode auto-jump persists a link and reports', () => {
+  const d = tmp();
+  const stub = makeStub(d, '{}');
+  fs.writeFileSync(path.join(d, 'pending.json'),
+    JSON.stringify({ workspaceId: 'w1', label: 'web', mode: 'add' }));
+  const res = runPanel(d, 'My title\nhttps://x.dev\n', { HERDR_BIN_PATH: stub });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Title \(Enter = derive from URL\):/);
+  assert.deepEqual(sl.readState(d).w1.links, [{ title: 'My title', url: 'https://x.dev' }]);
+  const calls = fs.readFileSync(path.join(d, 'calls.log'), 'utf8').trim().split('\n');
+  assert.equal(calls.filter((c) => c.includes('report-metadata')).length, 1);
+});
+test('panel line mode: cancel from add-mode auto-jump lands on menu, writes nothing', () => {
+  const d = tmp();
+  const stub = makeStub(d, '{}');
+  fs.writeFileSync(path.join(d, 'pending.json'),
+    JSON.stringify({ workspaceId: 'w1', label: 'web', mode: 'add' }));
+  const res = runPanel(d, '\n\nq\n', { HERDR_BIN_PATH: stub });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Title \(Enter = derive from URL\):/);
+  assert.equal(sl.readState(d).w1, undefined);
+  assert.equal(fs.existsSync(path.join(d, 'calls.log')), false);
+  assert.match(res.stdout, /a — add · <n> — open · d <n> — delete · q — close/);
+});
+test('panel line mode: stored >9 shows warning line', () => {
+  const d = tmp();
+  const stub = makeStub(d, '{}');
+  const twelve = Array.from({ length: 12 }, (_, i) => ({ title: 't' + i, url: 'https://x.dev/' + i }));
+  sl.writeState(d, { w1: { label: 'web', links: twelve } });
+  fs.writeFileSync(path.join(d, 'pending.json'), JSON.stringify({ workspaceId: 'w1', label: 'web' }));
+  const res = runPanel(d, 'q\n', { HERDR_BIN_PATH: stub });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /showing first 9/);
+  assert.match(res.stdout, /12 links stored/);
+});
+test('isTTY distinguishes pipes from ttys', () => {
+  const { PassThrough } = require('node:stream');
+  assert.equal(sl.isTTY(new PassThrough()), false);
+  assert.equal(sl.isTTY({ isTTY: true, setRawMode() {} }), true);
+  assert.equal(sl.isTTY(undefined), false);
+});
+test('menuKey: modified chords never act as bare letters', () => {
+  assert.deepEqual(sl.menuKey(false, { name: 'd', ctrl: true }), { op: 'quit' }); // EOF convention
+  assert.deepEqual(sl.menuKey(false, { name: 'a', ctrl: true }).op, 'error');
+  assert.deepEqual(sl.menuKey(false, { name: 'q', meta: true }).op, 'error');
+  assert.deepEqual(sl.menuKey(false, { name: 'c', ctrl: true }), { op: 'quit' });
+});
+test('promptLine resolves with the typed line, not eof', async () => {
+  const { PassThrough } = require('node:stream');
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const p = sl.promptLine(input, output, 'P: ');
+  input.write('hello\n');
+  assert.deepEqual(await p, { eof: false, answer: 'hello' });
+});

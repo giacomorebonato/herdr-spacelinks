@@ -82,15 +82,32 @@ const KEY_ERROR = 'unknown key — 1..9 open · a add · d delete · q/esc close
 
 function menuKey(armed, key) {
   const name = key && key.name ? String(key.name).toLowerCase() : '';
+  if (key && key.ctrl && (name === 'c' || name === 'd')) return { op: 'quit' };
+  if (key && (key.ctrl || key.meta)) {
+    return armed ? { op: 'disarm' } : { op: 'error', message: KEY_ERROR };
+  }
   if (armed) {
     if (/^[1-9]$/.test(name)) return { op: 'delete', n: parseInt(name, 10) };
     return { op: 'disarm' };
   }
-  if (name === 'q' || name === 'escape' || (key && key.ctrl && name === 'c')) return { op: 'quit' };
+  if (name === 'q' || name === 'escape') return { op: 'quit' };
   if (name === 'a') return { op: 'add' };
   if (name === 'd') return { op: 'arm' };
   if (/^[1-9]$/.test(name)) return { op: 'open', n: parseInt(name, 10) };
   return { op: 'error', message: KEY_ERROR };
+}
+
+function promptLine(input, output, prompt) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const rl = readline.createInterface({ input, output });
+    rl.on('close', () => { if (!settled) resolve({ eof: true, answer: '' }); });
+    rl.question(prompt, (a) => {
+      settled = true;
+      resolve({ eof: false, answer: a });
+      rl.close();
+    });
+  });
 }
 
 function addLink(links, title, url) {
@@ -203,21 +220,34 @@ function openExternal(url) {
   child.unref();
 }
 
-function panelFrame(workspaceId, label, links, error) {
+function isTTY(stdin) {
+  return !!(stdin && stdin.isTTY && typeof stdin.setRawMode === 'function');
+}
+
+const LINE_FOOTER = 'a — add · <n> — open · d <n> — delete · q — close';
+const KEY_FOOTER = '1..9 open · a add · d delete · q/esc close';
+const ARMED_FOOTER = 'delete which? 1..9 · esc cancels';
+
+function panelFrame(workspaceId, label, links, error, opts = {}) {
+  const { armed = false, keyMode = false, storedCount = links.length } = opts;
   const rows = [];
   rows.push('\x1b[2J\x1b[H');
   rows.push(`Space links — ${label} (${workspaceId})`);
   rows.push('');
-  if (links.length === 0) {
+  const visible = visibleLinks(links);
+  if (visible.length === 0) {
     rows.push('  (none yet)');
   } else {
-    links.forEach((link, i) => {
+    visible.forEach((link, i) => {
       const text = `${i + 1}. ↳ ${link.title}`;
       rows.push(`  \x1b]8;;${link.url}\x1b\\${text}\x1b]8;;\x1b\\`);
     });
   }
+  if (storedCount > visible.length) {
+    rows.push(`  (${storedCount} links stored — showing first 9)`);
+  }
   rows.push('');
-  rows.push('a — add · <n> — open · d <n> — delete · q — close');
+  rows.push(keyMode ? (armed ? ARMED_FOOTER : KEY_FOOTER) : LINE_FOOTER);
   if (error) rows.push(`✗ ${error}`);
   rows.push('');
   return rows.join('\n');
@@ -227,34 +257,90 @@ function resolveTarget(dir, env) {
   try {
     const pending = JSON.parse(fs.readFileSync(path.join(dir, 'pending.json'), 'utf8'));
     if (pending && pending.workspaceId) {
-      return { workspaceId: pending.workspaceId, label: pending.label || pending.workspaceId };
+      return {
+        workspaceId: pending.workspaceId,
+        label: pending.label || pending.workspaceId,
+        mode: pending.mode === 'add' ? 'add' : 'open',
+      };
     }
   } catch { /* fall through */ }
   try {
     const context = JSON.parse(env.HERDR_PLUGIN_CONTEXT_JSON || '{}');
     if (context && context.workspace_id) {
-      return { workspaceId: context.workspace_id, label: context.workspace_label || context.workspace_id };
+      return {
+        workspaceId: context.workspace_id,
+        label: context.workspace_label || context.workspace_id,
+        mode: 'open',
+      };
     }
   } catch { /* fall through */ }
   throw new Error('cannot resolve current space');
 }
 
-async function panelMain(opts = {}) {
-  const env = opts.env || process.env;
-  const input = opts.stdin || process.stdin;
-  const output = opts.stdout || process.stdout;
-  const dir = env.HERDR_PLUGIN_STATE_DIR;
-  if (!dir) throw new Error('HERDR_PLUGIN_STATE_DIR is not set');
-  const { workspaceId, label } = resolveTarget(dir, env);
+function createPanelCtx({ dir, state, workspaceId, label, output, run }) {
+  const ctx = { dir, state, workspaceId, label, output, error: null, armed: false, keyMode: false };
+  ctx.render = () => {
+    const links = linksFor(state, workspaceId);
+    output.write(panelFrame(workspaceId, label, links, ctx.error, {
+      armed: ctx.armed,
+      keyMode: ctx.keyMode,
+      storedCount: links.length,
+    }));
+  };
+  ctx.persistAndReport = (links) => {
+    state[workspaceId] = { label, links };
+    writeState(dir, state);
+    try {
+      reportTokens(workspaceId, links, run);
+      ctx.error = null;
+    } catch (err) {
+      ctx.error = err.message;
+    }
+  };
+  ctx.open = (n) => {
+    const links = linksFor(state, workspaceId);
+    if (n < 1 || n > links.length) {
+      ctx.error = `no link ${n}`;
+      return false;
+    }
+    openExternal(links[n - 1].url);
+    return true;
+  };
+  ctx.remove = (n) => {
+    const result = removeLink(linksFor(state, workspaceId), n);
+    if (!result.ok) {
+      ctx.error = result.message;
+      return false;
+    }
+    ctx.persistAndReport(result.links);
+    return true;
+  };
+  return ctx;
+}
 
-  let state;
-  try {
-    state = readState(dir);
-  } catch {
-    output.write('links.json is corrupt — fix or remove it\n');
-    process.exit(1);
+async function addFlow(ctx, askOrQuit) {
+  const t = await askOrQuit('Title (Enter = derive from URL): ');
+  if (t.eof) return 'eof';
+  const title = String(t.answer).trim();
+  const first = await askOrQuit('URL: ');
+  if (first.eof) return 'eof';
+  let urlLine = String(first.answer).trim();
+  for (;;) {
+    if (urlLine === '') return 'cancelled';
+    const result = addLink(linksFor(ctx.state, ctx.workspaceId), title, urlLine);
+    if (!result.ok) {
+      ctx.output.write(`✗ ${result.message}\n`);
+      const retry = await askOrQuit('URL: ');
+      if (retry.eof) return 'eof';
+      urlLine = String(retry.answer).trim();
+      continue;
+    }
+    ctx.persistAndReport(result.links);
+    return 'added';
   }
+}
 
+async function lineDriver(ctx, { input, output }, mode) {
   const rl = readline.createInterface({ input, output, terminal: false });
   const pendingLines = [];
   let lineWaiter = null;
@@ -285,26 +371,19 @@ async function panelMain(opts = {}) {
   const askOrQuit = async (prompt) => {
     const answer = await ask(prompt);
     if (answer === null) {
-      rl.close();
       return { eof: true, answer: '' };
     }
     return { eof: false, answer };
   };
-  let error = null;
-
-  const persistAndReport = (links) => {
-    state[workspaceId] = { label, links };
-    writeState(dir, state);
-    try {
-      reportTokens(workspaceId, links, herdrRun);
-      error = null;
-    } catch (err) {
-      error = err.message;
+  if (mode === 'add') {
+    const r = await addFlow(ctx, askOrQuit);
+    if (r === 'eof') {
+      rl.close();
+      return;
     }
-  };
-
+  }
   for (;;) {
-    output.write(panelFrame(workspaceId, label, linksFor(state, workspaceId), error));
+    ctx.render();
     const menu = await askOrQuit('> ');
     if (menu.eof) return;
     const cmd = parseCommand(menu.answer);
@@ -312,55 +391,127 @@ async function panelMain(opts = {}) {
       rl.close();
       return;
     }
-    if (cmd.op === 'redraw') {
-      continue;
-    }
+    if (cmd.op === 'redraw') continue;
     if (cmd.op === 'error') {
-      error = cmd.message;
+      ctx.error = cmd.message;
       continue;
     }
     if (cmd.op === 'add') {
-      const t = await askOrQuit('Title (Enter = derive from URL): ');
-      if (t.eof) return;
-      const title = String(t.answer).trim();
-      const first = await askOrQuit('URL: ');
-      if (first.eof) return;
-      let urlLine = String(first.answer).trim();
-      for (;;) {
-        if (urlLine === '') break;
-        const result = addLink(linksFor(state, workspaceId), title, urlLine);
-        if (!result.ok) {
-          output.write(`✗ ${result.message}\n`);
-          const retry = await askOrQuit('URL: ');
-          if (retry.eof) return;
-          urlLine = String(retry.answer).trim();
-          continue;
-        }
-        persistAndReport(result.links);
-        break;
+      const r = await addFlow(ctx, askOrQuit);
+      if (r === 'eof') {
+        rl.close();
+        return;
       }
       continue;
     }
     if (cmd.op === 'open') {
-      const links = linksFor(state, workspaceId);
-      if (cmd.n < 1 || cmd.n > links.length) {
-        error = `no link ${cmd.n}`;
-        continue;
+      if (ctx.open(cmd.n)) {
+        rl.close();
+        return;
       }
-      openExternal(links[cmd.n - 1].url);
-      rl.close();
-      return;
+      continue;
     }
     if (cmd.op === 'delete') {
-      const result = removeLink(linksFor(state, workspaceId), cmd.n);
-      if (!result.ok) {
-        error = result.message;
-        continue;
-      }
-      persistAndReport(result.links);
+      ctx.remove(cmd.n);
       continue;
     }
   }
+}
+
+async function keyDriver(ctx, { input, output }, mode) {
+  ctx.keyMode = true;
+  readline.emitKeypressEvents(input);
+  let keyWaiter = null;
+  let closed = false;
+  const pendingKeys = [];
+  let promptActive = false;
+  input.on('keypress', (str, key) => {
+    if (promptActive) return;
+    pendingKeys.push(key || { name: str });
+    if (keyWaiter) {
+      const w = keyWaiter;
+      keyWaiter = null;
+      w();
+    }
+  });
+  input.on('close', () => {
+    closed = true;
+    if (keyWaiter) {
+      const w = keyWaiter;
+      keyWaiter = null;
+      w(null);
+    }
+  });
+  const cooked = () => { try { input.setRawMode(false); } catch { /* already gone */ } };
+  const rearmRaw = () => { try { input.setRawMode(true); } catch { /* already gone */ } };
+  const nextKey = () => new Promise((resolve) => {
+    const drain = () => {
+      if (pendingKeys.length > 0) return resolve(pendingKeys.shift());
+      if (closed) return resolve(null);
+      keyWaiter = drain;
+    };
+    drain();
+  });
+  const askOrQuit = (prompt) => {
+    promptActive = true;
+    return promptLine(input, output, prompt).finally(() => {
+      promptActive = false;
+      rearmRaw();
+    });
+  };
+  input.setRawMode(true);
+
+  if (mode === 'add' || linksFor(ctx.state, ctx.workspaceId).length === 0) {
+    await addFlow(ctx, askOrQuit);
+    if (closed) { cooked(); return; }
+  }
+  for (;;) {
+    ctx.render();
+    const key = await nextKey();
+    if (key === null) { cooked(); return; }
+    const act = menuKey(ctx.armed, key);
+    ctx.armed = act.op === 'arm';
+    if (act.op === 'quit') { cooked(); return; }
+    if (act.op === 'add') {
+      await addFlow(ctx, askOrQuit);
+      if (closed) { cooked(); return; }
+      continue;
+    }
+    if (act.op === 'open') {
+      if (ctx.open(act.n)) { cooked(); return; }
+      continue;
+    }
+    if (act.op === 'delete') {
+      ctx.remove(act.n);
+      continue;
+    }
+    if (act.op === 'error') {
+      ctx.error = act.message;
+      continue;
+    }
+    // arm/disarm: fall through, next render shows the swapped footer
+  }
+}
+
+async function panelMain(opts = {}) {
+  const env = opts.env || process.env;
+  const input = opts.stdin || process.stdin;
+  const output = opts.stdout || process.stdout;
+  const dir = env.HERDR_PLUGIN_STATE_DIR;
+  if (!dir) throw new Error('HERDR_PLUGIN_STATE_DIR is not set');
+  const { workspaceId, label, mode } = resolveTarget(dir, env);
+
+  let state;
+  try {
+    state = readState(dir);
+  } catch {
+    output.write('links.json is corrupt — fix or remove it\n');
+    process.exit(1);
+  }
+
+  const ctx = createPanelCtx({ dir, state, workspaceId, label, output, run: herdrRun });
+  if (isTTY(input)) return keyDriver(ctx, { input, output }, mode);
+  return lineDriver(ctx, { input, output }, mode);
 }
 
 module.exports = {
@@ -382,6 +533,8 @@ module.exports = {
   openAction,
   parseCommand,
   openExternal,
+  isTTY,
+  promptLine,
   panelMain,
 };
 
