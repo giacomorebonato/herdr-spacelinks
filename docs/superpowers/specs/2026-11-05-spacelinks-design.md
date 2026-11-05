@@ -9,7 +9,8 @@ press one shortcut, a modal popup lists the focused Space's links and lets you
 add a new one (title + URL); links then show up indented under the Space in the
 sidebar. Opening a link opens it in the default browser.
 
-Why: quick access to per-project URLs (dashboards, PRs, docs) without leaving
+Why: quick access to pages tied to the work in each Space — PR links,
+dashboards, docs, anything connected with the current work — without leaving
 the terminal, attached to the space they belong to.
 
 ## Goals
@@ -160,7 +161,9 @@ a — add    <n> — open    d <n> — delete    q/esc — close
 
 - On open with no links: jump straight into the add form (Title:, URL:).
 - Add: prompt title, prompt URL (validate `^https?://`), save, refresh tokens,
-  redraw.
+  redraw. An **empty title auto-derives from the URL** (protocol and trailing
+  slash stripped, truncated to fit 80 chars) so quick capture is paste-url →
+  enter → enter.
 - Open: run `open` (macOS) / `xdg-open` (Linux) / `start` (Windows) on the
   chosen URL, then exit (popup closes). Ctrl-click on the hyperlinked title
   opens in browser directly via herdr.
