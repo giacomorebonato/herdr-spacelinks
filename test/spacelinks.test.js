@@ -39,13 +39,13 @@ test('tokenValue caps at 80 code points and prefixes glyph', () => {
   assert.equal(Array.from(sl.tokenValue('x'.repeat(100))).length, 80);
 });
 
-test('addLink normalizes, derives title, caps at 14', () => {
+test('addLink normalizes, derives title, caps at 9', () => {
   const r = sl.addLink([], '', 'github.com/org/repo');
   assert.deepEqual(r.links, [{ title: 'github.com/org/repo', url: 'https://github.com/org/repo' }]);
   assert.equal(sl.addLink([], 'T', 'ftp://x').ok, false);
-  const full = Array.from({ length: 14 }, (_, i) => ({ title: 't' + i, url: 'https://x.dev/' + i }));
-  const r14 = sl.addLink(full, 'T', 'https://y.dev');
-  assert.equal(r14.ok, false); assert.match(r14.message, /limit/);
+  const full = Array.from({ length: 9 }, (_, i) => ({ title: 't' + i, url: 'https://x.dev/' + i }));
+  const r9 = sl.addLink(full, 'T', 'https://y.dev');
+  assert.equal(r9.ok, false); assert.match(r9.message, /limit reached \(9\)/);
 });
 test('removeLink bounds-checks', () => {
   const r = sl.removeLink([{ title: 'A', url: 'https://a.dev' }], 2);
@@ -58,6 +58,32 @@ test('planReport: 3 links → 3 sets, 11 clears; [] → 14 clears; values ≤80'
   const none = sl.planReport([]);
   assert.equal(none.sets.length, 0); assert.equal(none.clears.length, 14);
   for (const s of three.sets) assert.ok(Array.from(s.value).length <= 80);
+});
+test('planReport caps sets at 9 and clears to spacelink_14', () => {
+  const twelve = Array.from({ length: 12 }, (_, i) => ({ title: 't' + i, url: 'https://x.dev/' + i }));
+  const r = sl.planReport(twelve);
+  assert.equal(r.sets.length, 9);
+  assert.equal(r.clears.length, 5);
+  assert.ok(r.clears.includes('spacelink_10'));
+  assert.equal(r.clears[r.clears.length - 1], 'spacelink_14');
+});
+test('visibleLinks slices to 9', () => {
+  const twelve = Array.from({ length: 12 }, (_, i) => ({ title: 't' + i, url: 'https://x.dev/' + i }));
+  assert.equal(sl.visibleLinks(twelve).length, 9);
+  assert.deepEqual(sl.visibleLinks(twelve.slice(0, 3)), twelve.slice(0, 3));
+});
+test('menuKey maps every key', () => {
+  assert.deepEqual(sl.menuKey(false, { name: 'a' }), { op: 'add' });
+  assert.deepEqual(sl.menuKey(false, { name: 'A', shift: true }), { op: 'add' });
+  assert.deepEqual(sl.menuKey(false, { name: 'd' }), { op: 'arm' });
+  assert.deepEqual(sl.menuKey(false, { name: '3' }), { op: 'open', n: 3 });
+  assert.deepEqual(sl.menuKey(false, { name: 'q' }), { op: 'quit' });
+  assert.deepEqual(sl.menuKey(false, { name: 'escape' }), { op: 'quit' });
+  assert.deepEqual(sl.menuKey(false, { name: 'c', ctrl: true }), { op: 'quit' });
+  assert.deepEqual(sl.menuKey(false, { name: 'x' }).op, 'error');
+  assert.deepEqual(sl.menuKey(true, { name: '3' }), { op: 'delete', n: 3 });
+  assert.deepEqual(sl.menuKey(true, { name: 'x' }), { op: 'disarm' });
+  assert.deepEqual(sl.menuKey(true, { name: 'escape' }), { op: 'disarm' });
 });
 
 const makeStub = (dir, out, fail) => {

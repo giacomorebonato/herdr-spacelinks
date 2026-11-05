@@ -19,7 +19,7 @@
 - `pending.json` = `{ workspaceId, label, mode }`, mode `'open' | 'add'` (missing mode reads as `'open'`).
 - Pinned copy — key-mode footer: `1..9 open · a add · d delete · q/esc close`; armed footer: `delete which? 1..9 · esc cancels`; key-mode unknown-key error: `unknown key — 1..9 open · a add · d delete · q/esc close`; >9 warning line: `(N links stored — showing first 9)`. Line-mode footer stays `a — add · <n> — open · d <n> — delete · q — close`.
 - Manifest: `id = "spacelinks"`, `min_herdr_version = "0.9.3"` unchanged.
-- Tests: `node --test test/` green before each commit.
+- Tests: `node --test test/spacelinks.test.js` green before each commit.
 
 ## Review Focus
 
@@ -60,9 +60,9 @@ test('menuKey maps every key', () => {
 });
 ```
 
-- [ ] **Step 2: Run** `node --test test/` → FAIL on the new/updated tests
+- [ ] **Step 2: Run** `node --test test/spacelinks.test.js` → FAIL on the new/updated tests
 - [ ] **Step 3: Implement** `menuKey`, `visibleLinks`, retune `addLink`/`planReport` (clears to index 14 regardless of set count; both `MAX_LINKS = 9` and `CLEAR_TOKENS = 14` module constants). Export `menuKey`, `visibleLinks`.
-- [ ] **Step 4: Run** `node --test test/` → PASS
+- [ ] **Step 4: Run** `node --test test/spacelinks.test.js` → PASS
 - [ ] **Step 5: Commit** `git commit -am "feat: single-key menu state machine and 9-link cap"`
 
 ### Task 2: Panel split — shared context, key driver, line fallback
@@ -83,9 +83,9 @@ test('menuKey maps every key', () => {
   - State with 12 links, stdin `'q\n'` → stdout contains `showing first 9` and `12 links stored`.
   - `isTTY` returns false for a `PassThrough` and true for a fake `{ isTTY: true, setRawMode() {} }`.
   - `menuKey`-driven bounds already covered; keep existing `parseCommand` tests untouched.
-- [ ] **Step 2: Run** `node --test test/` → FAIL on new tests
+- [ ] **Step 2: Run** `node --test test/spacelinks.test.js` → FAIL on new tests
 - [ ] **Step 3: Implement** the split (`isTTY`, shared panel context: render/persistAndReport/addFlow/open/remove with bounds vs the full stored list; two drivers; `resolveTarget` mode).
-- [ ] **Step 4: Run** `node --test test/` → PASS (all, including the pre-existing panel tests)
+- [ ] **Step 4: Run** `node --test test/spacelinks.test.js` → PASS (all, including the pre-existing panel tests)
 - [ ] **Step 5: Pipe smokes** — `printf 'q\n' | node spacelinks.js panel` (state has links) → exit 0, header + title on stdout; `printf 'a\nMy title\nexample.com/x\nq\n' | node spacelinks.js panel` → link stored, one report call. Both exit 0.
 - [ ] **Step 6: Manual pty smoke (TTY path)** — `printf 'q' | script -q /dev/null node spacelinks.js panel` with env set: modal renders, `q` exits. Then interactively: no-links auto-jump (empty title + empty URL lands on menu), `a`-add, digit-open (opens browser), `d`+digit deletes, `d`+`esc` disarms, typing `d` inside the URL prompt does not arm. Fix and re-verify anything broken.
 - [ ] **Step 7: Commit** `git commit -am "feat: single-key modal with line-mode fallback"`
@@ -102,9 +102,9 @@ test('menuKey maps every key', () => {
 - Manifest: `[[actions]] id = "add"`, `title = "Add space link"`, `contexts = ["workspace"]`, `command = ["node", "spacelinks.js", "add"]`.
 
 - [ ] **Step 1: Write failing tests** — update the existing `openAction` pending-shape assertion to `{ workspaceId: 'w2', label: 'web-dashboard', mode: 'open' }`; add: `openAction(d, 'w2', 'web', run, 'add')` → pending `{..., mode: 'add'}` and one `plugin pane open` call; failure stub still throws `/boom|popup/`.
-- [ ] **Step 2: Run** `node --test test/` → FAIL
+- [ ] **Step 2: Run** `node --test test/spacelinks.test.js` → FAIL
 - [ ] **Step 3: Implement** the mode param, `add` dispatch, manifest action block.
-- [ ] **Step 4: Run** `node --test test/` → PASS
+- [ ] **Step 4: Run** `node --test test/spacelinks.test.js` → PASS
 - [ ] **Step 5: Commit** `git commit -am "feat: add action opens the popup pre-armed in the add form"`
 
 ### Task 4: `workspace.focused` republish hook
@@ -120,9 +120,9 @@ test('menuKey maps every key', () => {
 - Manifest: `[[events]] on = "workspace.focused"`, `command = ["node", "spacelinks.js", "refresh"]`.
 
 - [ ] **Step 1: Write failing tests** — stored entry + event JSON `{workspace_id:'w1'}` → one `report-metadata` call for `w1`; nested `{workspace:{workspace_id:'w1'}}` → same via fallback path; `HERDR_WORKSPACE_ID` fallback; un-stored workspace → no call, `{ok:true, skipped:'no links stored'}`; no ids at all → `{ok:true, skipped:'no workspace id'}`, no call; corrupt JSON → fallback path; failing report stub → throws.
-- [ ] **Step 2: Run** `node --test test/` → FAIL
+- [ ] **Step 2: Run** `node --test test/spacelinks.test.js` → FAIL
 - [ ] **Step 3: Implement** `refreshFocused`, dispatch, manifest event block.
-- [ ] **Step 4: Run** `node --test test/` → PASS
+- [ ] **Step 4: Run** `node --test test/spacelinks.test.js` → PASS
 - [ ] **Step 5: Commit** `git commit -am "feat: focus event republishes stored sidebar tokens"`
 
 ### Task 5: README, manifest validation, live verification

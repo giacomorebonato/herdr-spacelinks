@@ -71,7 +71,27 @@ function tokenValue(title) {
   return cap(`↳ ${title}`, 80);
 }
 
-const MAX_LINKS = 14;
+const MAX_LINKS = 9;
+const CLEAR_TOKENS = 14;
+
+function visibleLinks(links) {
+  return links.slice(0, MAX_LINKS);
+}
+
+const KEY_ERROR = 'unknown key — 1..9 open · a add · d delete · q/esc close';
+
+function menuKey(armed, key) {
+  const name = key && key.name ? String(key.name).toLowerCase() : '';
+  if (armed) {
+    if (/^[1-9]$/.test(name)) return { op: 'delete', n: parseInt(name, 10) };
+    return { op: 'disarm' };
+  }
+  if (name === 'q' || name === 'escape' || (key && key.ctrl && name === 'c')) return { op: 'quit' };
+  if (name === 'a') return { op: 'add' };
+  if (name === 'd') return { op: 'arm' };
+  if (/^[1-9]$/.test(name)) return { op: 'open', n: parseInt(name, 10) };
+  return { op: 'error', message: KEY_ERROR };
+}
 
 function addLink(links, title, url) {
   const normalized = normalizeUrl(url);
@@ -91,13 +111,12 @@ function removeLink(links, n) {
 }
 
 function planReport(links) {
-  const count = Math.min(links.length, MAX_LINKS);
-  const sets = links.slice(0, MAX_LINKS).map((link, i) => ({
+  const sets = visibleLinks(links).map((link, i) => ({
     name: `spacelink_${i + 1}`,
     value: tokenValue(link.title),
   }));
   const clears = [];
-  for (let i = count; i < MAX_LINKS; i++) clears.push(`spacelink_${i + 1}`);
+  for (let i = sets.length; i < CLEAR_TOKENS; i++) clears.push(`spacelink_${i + 1}`);
   return { sets, clears };
 }
 
@@ -354,6 +373,8 @@ module.exports = {
   tokenValue,
   addLink,
   removeLink,
+  visibleLinks,
+  menuKey,
   planReport,
   herdrRun,
   reportTokens,
