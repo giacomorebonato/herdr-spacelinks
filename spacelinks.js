@@ -514,6 +514,23 @@ async function panelMain(opts = {}) {
   return lineDriver(ctx, { input, output }, mode);
 }
 
+function refreshFocused(env, dir, run) {
+  let ev = null;
+  try {
+    ev = JSON.parse(env.HERDR_PLUGIN_EVENT_JSON || '{}');
+  } catch {
+    ev = null;
+  }
+  const wsId = (ev && (ev.workspace_id || (ev.workspace && ev.workspace.workspace_id)))
+    || env.HERDR_WORKSPACE_ID
+    || null;
+  if (!wsId) return { ok: true, skipped: 'no workspace id' };
+  const state = readState(dir);
+  if (!state[wsId]) return { ok: true, skipped: 'no links stored' };
+  reportTokens(wsId, linksFor(state, wsId), run);
+  return { ok: true };
+}
+
 module.exports = {
   stateDir,
   readState,
@@ -535,6 +552,7 @@ module.exports = {
   openExternal,
   isTTY,
   promptLine,
+  refreshFocused,
   panelMain,
 };
 
@@ -570,6 +588,10 @@ if (require.main === module) {
     if (cmd === 'add') {
       openFromContext('add');
       return;
+    }
+    if (cmd === 'refresh') {
+      refreshFocused(process.env, stateDir(), herdrRun);
+      process.exit(0);
     }
     if (cmd === 'panel') {
       panelMain({ env: process.env })

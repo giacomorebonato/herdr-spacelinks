@@ -251,3 +251,48 @@ test('promptLine resolves with the typed line, not eof', async () => {
   input.write('hello\n');
   assert.deepEqual(await p, { eof: false, answer: 'hello' });
 });
+
+// --- Task 4: focus republish hook ---
+test('refreshFocused reports stored workspace from event JSON', () => {
+  const d = tmp();
+  const stub = makeStub(d, '{}');
+  sl.writeState(d, { w1: { label: 'web', links: [{ title: 'A', url: 'https://a.dev' }] } });
+  process.env.HERDR_BIN_PATH = stub;
+  const r = sl.refreshFocused({ HERDR_PLUGIN_EVENT_JSON: '{"workspace_id":"w1"}' }, d, (a) => sl.herdrRun(a));
+  delete process.env.HERDR_BIN_PATH;
+  assert.deepEqual(r, { ok: true });
+  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /report-metadata w1/);
+});
+test('refreshFocused: nested id, env fallback, corrupt JSON all resolve', () => {
+  const d = tmp();
+  const stub = makeStub(d, '{}');
+  sl.writeState(d, { w1: { label: 'web', links: [] } });
+  process.env.HERDR_BIN_PATH = stub;
+  const nested = sl.refreshFocused({ HERDR_PLUGIN_EVENT_JSON: '{"workspace":{"workspace_id":"w1"}}' }, d, (a) => sl.herdrRun(a));
+  const envfb = sl.refreshFocused({ HERDR_WORKSPACE_ID: 'w1' }, d, (a) => sl.herdrRun(a));
+  const corrupt = sl.refreshFocused({ HERDR_PLUGIN_EVENT_JSON: '{oops', HERDR_WORKSPACE_ID: 'w1' }, d, (a) => sl.herdrRun(a));
+  delete process.env.HERDR_BIN_PATH;
+  assert.deepEqual([nested.ok, envfb.ok, corrupt.ok], [true, true, true]);
+  const calls = fs.readFileSync(path.join(d, 'calls.log'), 'utf8').split('\n');
+  assert.equal(calls.filter((c) => c.includes('report-metadata w1')).length, 3);
+});
+test('refreshFocused skips unknown workspaces and id-less events', () => {
+  const d = tmp();
+  const stub = makeStub(d, '{}');
+  sl.writeState(d, { w1: { label: 'web', links: [] } });
+  process.env.HERDR_BIN_PATH = stub;
+  const unknown = sl.refreshFocused({ HERDR_PLUGIN_EVENT_JSON: '{"workspace_id":"w9"}' }, d, (a) => sl.herdrRun(a));
+  const idless = sl.refreshFocused({}, d, (a) => sl.herdrRun(a));
+  delete process.env.HERDR_BIN_PATH;
+  assert.deepEqual(unknown, { ok: true, skipped: 'no links stored' });
+  assert.deepEqual(idless, { ok: true, skipped: 'no workspace id' });
+  assert.equal(fs.existsSync(path.join(d, 'calls.log')), false);
+});
+test('refreshFocused throws when the report fails', () => {
+  const d = tmp();
+  const stub = makeStub(d, '', true);
+  sl.writeState(d, { w1: { label: 'web', links: [] } });
+  process.env.HERDR_BIN_PATH = stub;
+  assert.throws(() => sl.refreshFocused({ HERDR_PLUGIN_EVENT_JSON: '{"workspace_id":"w1"}' }, d, (a) => sl.herdrRun(a)), /boom|report-metadata/);
+  delete process.env.HERDR_BIN_PATH;
+});

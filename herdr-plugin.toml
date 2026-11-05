@@ -27,3 +27,7 @@ command = ["node", "spacelinks.js", "panel"]
 
 [[startup]]
 command = ["node", "spacelinks.js", "apply"]
+
+[[events]]
+on = "workspace.focused"
+command = ["node", "spacelinks.js", "refresh"]
