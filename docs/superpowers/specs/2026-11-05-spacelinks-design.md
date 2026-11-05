@@ -1,6 +1,6 @@
 # Space Links — herdr plugin design
 
-Date: 2026-11-05 · Status: proposed
+Date: 2026-11-05 · Status: approved (2026-11-05)
 
 ## Intent
 
@@ -30,8 +30,8 @@ the terminal, attached to the space they belong to.
   text, control chars stripped; sidebar has no plugin click routing).
 - Link handler intercepting Ctrl-clicks on arbitrary URLs (option C) — possible
   later, intentionally omitted.
-- Editing/reordering links; orphan-state cleanup on workspace close; >16 links
-  per Space (herdr caps sidebar rows at 16 and token keys at 32/workspace).
+- Editing/reordering links; orphan-state cleanup on workspace close; >14 links per Space (herdr caps sidebar rows at 16 total — the 2 default
+  rows leave 14; 32 token keys per workspace).
 - Marketplace publishing (can add GitHub topic `herdr-plugin` later).
 
 ## Constraints (verified against herdr 0.9.5 docs + source)
@@ -87,7 +87,7 @@ step. The user's machines run Node (pi/T3 are Node-based).
 id = "spacelinks"
 name = "Space Links"
 version = "0.1.0"
-min_herdr_version = "0.9.0"
+min_herdr_version = "0.9.5"  # verified against this version's docs + source
 description = "Per-Space web links in the herdr sidebar"
 platforms = ["macos", "linux", "windows"]
 
@@ -127,8 +127,8 @@ rows = [
   ["state_icon", "workspace"],
   ["branch", "git_status"],
   [{ token = "$spacelink_1", dim = true }],
-  [{ token = "$spacelink_2", dim = true }],
-  # ... up to $spacelink_16
+  [{ token = "$spacelink_14", dim = true }],
+  # rows 3..16 = $spacelink_1..$spacelink_14 (16-row cap: 2 default + 14 links)
 ]
 ```
 
@@ -143,7 +143,8 @@ restarts):
 }
 ```
 
-16 links max per Space; the modal refuses beyond that with a message.
+14 links max per Space (16-row sidebar cap minus the 2 default rows);
+the modal refuses beyond that with a message.
 Label is stored for display/telemetry only.
 
 ### Modal UX (subcommand `panel`)
@@ -175,10 +176,11 @@ a — add    <n> — open    d <n> — delete    q/esc — close
 
 ### Sidebar rendering (subcommand `apply`, shared with add/delete)
 
-For each workspace with links: report tokens `spacelink_1..N` =
+For each workspace with links: report tokens `spacelink_1..N` (N ≤ 14) =
 `"↳ <title>"` (title truncated so the value stays ≤80 chars; glyph carries the
-indent since values are trimmed) and clear `spacelink_N+1..16` when a report
-call would exceed 16 keys, use a second call for the clears. `apply` (startup)
+indent since values are trimmed) and clear `spacelink_N+1..14`. When a report
+call would exceed 16 keys (sets + clears count), use a second call for the
+remaining clears. `apply` (startup)
 iterates `herdr workspace list` and re-applies stored links.
 
 ### Install (dev)
