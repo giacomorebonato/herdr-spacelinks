@@ -71,6 +71,36 @@ function tokenValue(title) {
   return cap(`↳ ${title}`, 80);
 }
 
+const MAX_LINKS = 14;
+
+function addLink(links, title, url) {
+  const normalized = normalizeUrl(url);
+  if (!normalized) return { ok: false, message: 'not a valid http(s) URL', links };
+  if (links.length >= MAX_LINKS) {
+    return { ok: false, message: `space link limit reached (${MAX_LINKS})`, links };
+  }
+  const finalTitle = String(title || '').trim() || deriveTitle(normalized);
+  return { ok: true, message: 'added', links: [...links, { title: finalTitle, url: normalized }] };
+}
+
+function removeLink(links, n) {
+  if (!Number.isInteger(n) || n < 1 || n > links.length) {
+    return { ok: false, message: `no link ${n}`, links };
+  }
+  return { ok: true, message: 'deleted', links: links.filter((_, i) => i !== n - 1) };
+}
+
+function planReport(links) {
+  const count = Math.min(links.length, MAX_LINKS);
+  const sets = links.slice(0, MAX_LINKS).map((link, i) => ({
+    name: `spacelink_${i + 1}`,
+    value: tokenValue(link.title),
+  }));
+  const clears = [];
+  for (let i = count; i < MAX_LINKS; i++) clears.push(`spacelink_${i + 1}`);
+  return { sets, clears };
+}
+
 module.exports = {
   stateDir,
   readState,
@@ -79,4 +109,7 @@ module.exports = {
   normalizeUrl,
   deriveTitle,
   tokenValue,
+  addLink,
+  removeLink,
+  planReport,
 };

@@ -38,3 +38,24 @@ test('tokenValue caps at 80 code points and prefixes glyph', () => {
   assert.equal(sl.tokenValue('GitHub repo'), '↳ GitHub repo');
   assert.equal(Array.from(sl.tokenValue('x'.repeat(100))).length, 80);
 });
+
+test('addLink normalizes, derives title, caps at 14', () => {
+  const r = sl.addLink([], '', 'github.com/org/repo');
+  assert.deepEqual(r.links, [{ title: 'github.com/org/repo', url: 'https://github.com/org/repo' }]);
+  assert.equal(sl.addLink([], 'T', 'ftp://x').ok, false);
+  const full = Array.from({ length: 14 }, (_, i) => ({ title: 't' + i, url: 'https://x.dev/' + i }));
+  const r14 = sl.addLink(full, 'T', 'https://y.dev');
+  assert.equal(r14.ok, false); assert.match(r14.message, /limit/);
+});
+test('removeLink bounds-checks', () => {
+  const r = sl.removeLink([{ title: 'A', url: 'https://a.dev' }], 2);
+  assert.equal(r.ok, false); assert.match(r.message, /no link 2/);
+});
+test('planReport: 3 links → 3 sets, 11 clears; [] → 14 clears; values ≤80', () => {
+  const three = sl.planReport([{ title: 'a', url: 'https://a' }, { title: 'b', url: 'https://b' }, { title: 'c', url: 'https://c' }]);
+  assert.equal(three.sets.length, 3); assert.equal(three.clears.length, 11);
+  assert.deepEqual(three.sets[0], { name: 'spacelink_1', value: '↳ a' });
+  const none = sl.planReport([]);
+  assert.equal(none.sets.length, 0); assert.equal(none.clears.length, 14);
+  for (const s of three.sets) assert.ok(Array.from(s.value).length <= 80);
+});
