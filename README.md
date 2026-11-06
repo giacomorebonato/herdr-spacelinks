@@ -144,22 +144,22 @@ the new link limit.)
 
 1. Focus the Space you want links for and press `prefix+m`. The popup lists
    that Space's links with a `›` cursor on the selected row; rows are
-   numbered and Ctrl-clickable.
+   Ctrl-clickable.
 2. One keypress per action:
 
    | Key | Action |
    |---|---|
    | `↑`/`↓` (or `k`/`j`) | move the cursor |
    | `Enter` | open the selected link in the default browser (popup closes) |
-   | `1`–`9` | quick-open that row of the visible window (popup closes) |
    | `a` | add — prompts `URL:` first, then `Title [<derived>]:` |
    | `d` | delete the row the `›` cursor is on (move with `↑`/`↓` first) |
    | `q` / `Esc` / `Ctrl+C` / `Ctrl+D` | close the popup |
 
    Deleting needs no confirmation: the `✓ deleted — ↳ …` status line names the
    row removed until your next keypress. The footer only
-   advertises keys that can act (`1..3 open` when three links exist, no
-   digits at all with one link), and stray keypresses are ignored silently
+   advertises keys that can act (with three links it reads `↑/↓ select ·
+   enter open · a add · d delete · q close` — no digit hints; the cursor
+   is the only selector), and stray keypresses are ignored silently
    instead of printing an error. Add/delete confirmations (`✓ added`,
    `✓ deleted`) show until the next keypress, then clear.
 
