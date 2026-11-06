@@ -55,7 +55,7 @@ unions for menu actions and line commands; typed herdr CLI, stream, and
 panel-context boundaries; runtime type guards for `links.json`,
 `pending.json`, plugin context, workspace-list output, and focus events —
 JSON is untrusted input, so guards turn `JSON.parse`'s `any` into validated
-types). `npm run build` emits plain CommonJS `spacelinks.js` (committed), so
+types). `bun run build` emits plain CommonJS `spacelinks.js` (committed), so
 the runtime stays `node spacelinks.js` with zero dependencies for users; no
 Bun binary, for the performance and distribution reasons above. Tests keep
 exercising the compiled artifact, so what ships is what is tested.

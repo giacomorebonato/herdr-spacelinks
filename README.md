@@ -155,17 +155,22 @@ plugin state dir printed by `herdr plugin config-dir spacelinks`.
 The source of truth is `spacelinks.ts` (strict TypeScript: discriminated menu
 actions, typed CLI/stream boundaries, and runtime guards for every JSON input
 — state files are hand-editable, so `links.json` is validated before use).
-`npm run build` compiles it to plain CommonJS `spacelinks.js`, which is what
+`bun run build` compiles it to plain CommonJS `spacelinks.js`, which is what
 herdr runs and what the tests exercise; the compiled artifact is committed so
 installing from GitHub still needs only Node.
 
+**Bun is the package manager and script runner** (`bun.lock` is the lockfile;
+never add a `package-lock.json`). The test suite itself runs on `node --test`,
+because it exercises the compiled artifact against the same runtime herdr
+uses.
+
 ```bash
-npm install        # dev-only toolchain: typescript + @types/node
-npm run typecheck  # tsc --noEmit (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes)
-npm test           # rebuild + node --test test/spacelinks.test.js
+bun install        # dev-only toolchain: typescript + @types/node
+bun run typecheck  # tsc --noEmit (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes)
+bun run test       # rebuild + node --test test/spacelinks.test.js
 ```
 
-After editing `spacelinks.ts`, always run `npm run build` and commit the
+After editing `spacelinks.ts`, always run `bun run build` and commit the
 regenerated `spacelinks.js` together with the source change.
 
 ## Notes
