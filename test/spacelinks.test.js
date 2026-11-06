@@ -14,6 +14,11 @@ test('readState throws on corrupt JSON', () => {
   const d = tmp(); fs.writeFileSync(path.join(d, 'links.json'), '{oops');
   assert.throws(() => sl.readState(d), /corrupt/);
 });
+test('readState validates the JSON shape (hand-edited state files)', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'links.json'), '{"w1":{"links":"nope"}}');
+  assert.throws(() => sl.readState(d), /corrupt: unexpected shape/);
+});
 test('writeState round-trips', () => {
   const d = tmp(); const s = { w1: { label: 'web', links: [{ title: 'A', url: 'https://a.dev' }] } };
   sl.writeState(d, s);

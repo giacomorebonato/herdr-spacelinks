@@ -19,7 +19,8 @@ default browser.
 ## Requirements
 
 - herdr ≥ 0.9.3
-- Node.js ≥ 18 (`node` on `PATH`)
+- Node.js ≥ 18 (`node` on `PATH`) — runtime only; nothing else is needed to
+  use the plugin, since the compiled `spacelinks.js` ships with the repo
 
 ## Install
 
@@ -148,6 +149,24 @@ re-enabling the plugin, the rows come back on the next visit to the Space.
 
 Debug with `herdr plugin log list --plugin spacelinks`. State lives in the
 plugin state dir printed by `herdr plugin config-dir spacelinks`.
+
+## Development
+
+The source of truth is `spacelinks.ts` (strict TypeScript: discriminated menu
+actions, typed CLI/stream boundaries, and runtime guards for every JSON input
+— state files are hand-editable, so `links.json` is validated before use).
+`npm run build` compiles it to plain CommonJS `spacelinks.js`, which is what
+herdr runs and what the tests exercise; the compiled artifact is committed so
+installing from GitHub still needs only Node.
+
+```bash
+npm install        # dev-only toolchain: typescript + @types/node
+npm run typecheck  # tsc --noEmit (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes)
+npm test           # rebuild + node --test test/spacelinks.test.js
+```
+
+After editing `spacelinks.ts`, always run `npm run build` and commit the
+regenerated `spacelinks.js` together with the source change.
 
 ## Notes
 

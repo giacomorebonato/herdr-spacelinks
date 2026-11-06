@@ -43,6 +43,19 @@ indexing (`d 12` still manages legacy link 12).
    nearly all latency is Node startup (~tens of ms) and the `herdr` child
    process itself, which a compiled binary does not change. It would also
    add a build step and per-platform artifacts to a plugin installed from
-   GitHub on macOS/Linux/Windows. TypeScript types without a runtime swap
-   are the zero-risk version of this idea (JSDoc works today).
+   GitHub on macOS/Linux/Windows.
 - Editing/reordering links, sidebar clickability — unchanged non-goals.
+
+## Addendum (same day): TypeScript migration
+
+Per user request, the JSDoc pass was upgraded to real TypeScript:
+`spacelinks.ts` is the strongly-typed source (strict mode,
+`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`; discriminated
+unions for menu actions and line commands; typed herdr CLI, stream, and
+panel-context boundaries; runtime type guards for `links.json`,
+`pending.json`, plugin context, workspace-list output, and focus events —
+JSON is untrusted input, so guards turn `JSON.parse`'s `any` into validated
+types). `npm run build` emits plain CommonJS `spacelinks.js` (committed), so
+the runtime stays `node spacelinks.js` with zero dependencies for users; no
+Bun binary, for the performance and distribution reasons above. Tests keep
+exercising the compiled artifact, so what ships is what is tested.
