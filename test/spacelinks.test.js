@@ -81,7 +81,7 @@ test('menuKey maps the single-state keymap', () => {
   assert.deepEqual(sl.menuKey({ name: 'a' }), { op: 'add' });
   assert.deepEqual(sl.menuKey({ name: 'A', shift: true }), { op: 'add' });
   assert.deepEqual(sl.menuKey({ name: 'd' }), { op: 'delete-selected' });
-  assert.deepEqual(sl.menuKey({ name: '3' }), { op: 'open', n: 3 });
+  assert.deepEqual(sl.menuKey({ name: '3' }), { op: 'noop' }); // digits no longer address rows
   assert.deepEqual(sl.menuKey({ name: 'q' }), { op: 'quit' });
   assert.deepEqual(sl.menuKey({ name: 'escape' }), { op: 'quit' });
   assert.deepEqual(sl.menuKey({ name: 'c', ctrl: true }), { op: 'quit' });
@@ -107,7 +107,7 @@ test('clampView keeps cursor and window coherent', () => {
 test('keyFooter only advertises actionable keys', () => {
   assert.equal(sl.keyFooter(0), 'a add · q close');
   assert.equal(sl.keyFooter(1), 'enter open · a add · d delete · q close');
-  assert.equal(sl.keyFooter(3), '↑/↓ select · enter open · 1..3 open · a add · d delete · q close');
+  assert.equal(sl.keyFooter(3), '↑/↓ select · enter open · a add · d delete · q close');
 });
 
 const makeStub = (dir, out, fail) => {
@@ -273,6 +273,7 @@ test('panelFrame renders cursor marker, scroll hints, honest footer', () => {
   assert.match(frame, /› /);
   assert.doesNotMatch(frame, /delete which/);   // no armed state
   assert.doesNotMatch(frame, /\x1b\[7m/);        // no inverse digits
+  assert.doesNotMatch(frame, /1\. ↳/);           // row labels gone
   const empty = sl.panelFrame('w1', 'web', [], null, { keyMode: true });
   assert.match(empty, /a add · q close/);
   assert.match(empty, /\(none yet\)/);
@@ -385,20 +386,30 @@ async function drivePanel(d, chunks, { links = null, mode = 'open' } = {}) {
   return { text: frames.join(''), frames, opened };
 }
 
-test('key mode: errors are transient and d deletes the selected row in one keypress', async () => {
+test("key mode: errors are transient and d deletes the ›-selected row in one keypress", async () => {
   const d = tmp();
-  const { frames } = await drivePanel(d, ['9', 'd'], {
+  const { frames } = await drivePanel(d, ['d', 'd', '\r', 'x'], {
+    links: [
+      { title: 'A', url: 'https://a.dev' },
+      { title: 'B', url: 'https://b.dev' },
+    ],
+  });
+  assert.ok(frames.some((f) => f.includes("✓ deleted — ↳ A")), "first d deletes the cursor row");
+  assert.ok(frames.some((f) => f.includes("✓ deleted — ↳ B")), "next d deletes the new cursor row");
+  const errored = frames.find((f) => f.includes("✗ no links yet — press a to add"));
+  assert.ok(errored, "enter on an empty list shows the gentle error");
+  assert.doesNotMatch(frames[frames.indexOf(errored) + 1], /✗/); // error cleared by the next key
+  assert.equal(sl.readState(d).w1.links.length, 0);
+});
+
+test('key mode: digits no longer address rows', async () => {
+  const d = tmp();
+  const { frames, opened } = await drivePanel(d, ['9', 'q'], {
     links: [{ title: 'A', url: 'https://a.dev' }],
   });
-  const errored = frames.find((f) => f.includes('✗ no link 9'));
-  assert.ok(errored, 'out-of-range digit shows a gentle error');
-  // remove() renders the instant list update before it sets its status line,
-  // so the ✓ frame is located by content, not by adjacency to the error.
-  assert.doesNotMatch(frames[frames.indexOf(errored) + 1], /no link 9/); // error cleared by the next key
-  const ok = frames.findIndex((f) => f.includes('✓ deleted — ↳ A'));
-  assert.ok(ok > 0, 'd deleted the ›-selected row in one keypress');
-  assert.match(frames[ok], /\(none yet\)/);        // list is empty: no second key needed
-  assert.equal(sl.readState(d).w1.links.length, 0);
+  assert.deepEqual(opened, []);                  // no browser open
+  assert.doesNotMatch(frames.join(""), /✗/);      // silent no-op — no error
+  assert.equal(sl.readState(d).w1.links.length, 1);
 });
 
 test('key mode: unknown keys are silent, status clears on next key', async () => {

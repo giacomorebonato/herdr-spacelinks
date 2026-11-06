@@ -45,7 +45,6 @@ export interface PendingTarget {
 
 /** Discriminated menu action — the op narrows which extra fields exist. */
 export type MenuAction =
-  | { op: 'open'; n: number }
   | { op: 'move'; delta: number }
   | { op: 'add' }
   | { op: 'quit' }
@@ -339,9 +338,9 @@ export function removeLink(links: Link[], n: number): LinkMutation {
 
 // Single-key menu state machine — no armed states. Unknown keys are silent
 // no-ops: the footer already documents the contract, and a scary error for
-// every stray keypress made the popup feel punitive. Digits open the
-// *visible window* row (the driver maps them to absolute link indices);
-// `d` deletes the `›`-selected row.
+// every stray keypress made the popup feel punitive. The `›` cursor is the
+// only selector: enter opens and `d` deletes the `›`-selected row; there are
+// no digit keys.
 export function menuKey(key: KeyLike | null | undefined): MenuAction {
   const name = key && key.name ? String(key.name).toLowerCase() : '';
   if (key && key.ctrl && (name === 'c' || name === 'd')) return { op: 'quit' };
@@ -352,7 +351,6 @@ export function menuKey(key: KeyLike | null | undefined): MenuAction {
   if (name === 'up' || name === 'k') return { op: 'move', delta: -1 };
   if (name === 'down' || name === 'j') return { op: 'move', delta: 1 };
   if (name === 'enter' || name === 'return') return { op: 'open-selected' };
-  if (/^[1-9]$/.test(name)) return { op: 'open', n: parseInt(name, 10) };
   return { op: 'noop' };
 }
 
@@ -498,20 +496,13 @@ export function isTTY(stdin: PanelStdin | undefined): stdin is TtyStdin {
 
 const LINE_FOOTER = 'a — add · <n> — open · d <n> — delete · q — close';
 
-function digitsHint(n: number): string {
-  if (n <= 1) return '1';
-  return `1..${n}`;
-}
-
-// The footer only advertises keys that can actually act on the current list —
-// no more "1..9 open" when three links exist. `d` deletes the cursor row
-// directly, so there is no armed variant of the footer.
+// The footer only advertises keys that can actually act on the current list.
+// The cursor is the only selector, so there is no digit hint anywhere.
 export function keyFooter(visibleCount: number): string {
   if (visibleCount === 0) return 'a add · q close';
   const parts: string[] = [];
   if (visibleCount > 1) parts.push('↑/↓ select');
   parts.push('enter open');
-  if (visibleCount > 1) parts.push(`${digitsHint(visibleCount)} open`);
   parts.push('a add', 'd delete', 'q close');
   return parts.join(' · ');
 }
@@ -540,9 +531,8 @@ export function panelFrame(
   } else {
     if (windowStart > 0) rows.push(`  \x1b[2m↑ ${windowStart} above\x1b[22m`);
     visible.forEach((link, i) => {
-      const digit = String(i + 1);
       const marker = windowStart + i === cursor ? '›' : ' ';
-      const text = `${digit}. ↳ ${link.title}`;
+      const text = `↳ ${link.title}`;
       rows.push(`${marker} \x1b]8;;${link.url}\x1b\\${text}\x1b]8;;\x1b\\`);
     });
     const below = links.length - (windowStart + visible.length);
@@ -897,10 +887,6 @@ async function keyDriver(
       const view = clampView(ctx.cursor + act.delta, ctx.windowStart, ctx.links().length);
       ctx.cursor = view.cursor;
       ctx.windowStart = view.windowStart;
-      continue;
-    }
-    if (act.op === 'open') {
-      if (ctx.open(ctx.windowStart + act.n)) { cooked(); return; }
       continue;
     }
     if (act.op === 'open-selected') {
