@@ -153,10 +153,11 @@ the new link limit.)
    | `Enter` | open the selected link in the default browser (popup closes) |
    | `1`–`9` | quick-open that row of the visible window (popup closes) |
    | `a` | add — prompts `URL:` first, then `Title [<derived>]:` |
-   | `d` then a digit or `Enter` | delete that row / the selected row; any other key cancels |
+   | `d` | delete the row the `›` cursor is on (move with `↑`/`↓` first) |
    | `q` / `Esc` / `Ctrl+C` / `Ctrl+D` | close the popup |
 
-   While delete is armed, the row digits are highlighted. The footer only
+   Deleting needs no confirmation: the `✓ deleted — ↳ …` status line names the
+   row removed until your next keypress. The footer only
    advertises keys that can act (`1..3 open` when three links exist, no
    digits at all with one link), and stray keypresses are ignored silently
    instead of printing an error. Add/delete confirmations (`✓ added`,
