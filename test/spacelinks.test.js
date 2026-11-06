@@ -77,27 +77,22 @@ test('visibleLinks slices to 9', () => {
   assert.equal(sl.visibleLinks(twelve).length, 9);
   assert.deepEqual(sl.visibleLinks(twelve.slice(0, 3)), twelve.slice(0, 3));
 });
-test('menuKey maps the cursor-model keymap', () => {
-  assert.deepEqual(sl.menuKey(false, { name: 'a' }), { op: 'add' });
-  assert.deepEqual(sl.menuKey(false, { name: 'A', shift: true }), { op: 'add' });
-  assert.deepEqual(sl.menuKey(false, { name: 'd' }), { op: 'arm' });
-  assert.deepEqual(sl.menuKey(false, { name: '3' }), { op: 'open', n: 3 });
-  assert.deepEqual(sl.menuKey(false, { name: 'q' }), { op: 'quit' });
-  assert.deepEqual(sl.menuKey(false, { name: 'escape' }), { op: 'quit' });
-  assert.deepEqual(sl.menuKey(false, { name: 'c', ctrl: true }), { op: 'quit' });
-  assert.deepEqual(sl.menuKey(false, { name: 'up' }), { op: 'move', delta: -1 });
-  assert.deepEqual(sl.menuKey(false, { name: 'k' }), { op: 'move', delta: -1 });
-  assert.deepEqual(sl.menuKey(false, { name: 'down' }), { op: 'move', delta: 1 });
-  assert.deepEqual(sl.menuKey(false, { name: 'j' }), { op: 'move', delta: 1 });
-  assert.deepEqual(sl.menuKey(false, { name: 'return' }), { op: 'open-selected' });
-  assert.deepEqual(sl.menuKey(false, { name: 'enter' }), { op: 'open-selected' });
-  assert.deepEqual(sl.menuKey(false, { name: 'x' }), { op: 'noop' });
-  assert.deepEqual(sl.menuKey(true, { name: '3' }), { op: 'delete', n: 3 });
-  assert.deepEqual(sl.menuKey(true, { name: 'return' }), { op: 'delete-selected' });
-  assert.deepEqual(sl.menuKey(true, { name: 'down' }), { op: 'move', delta: 1 });
-  assert.deepEqual(sl.menuKey(true, { name: 'up' }), { op: 'move', delta: -1 });
-  assert.deepEqual(sl.menuKey(true, { name: 'x' }), { op: 'disarm' });
-  assert.deepEqual(sl.menuKey(true, { name: 'escape' }), { op: 'disarm' });
+test('menuKey maps the single-state keymap', () => {
+  assert.deepEqual(sl.menuKey({ name: 'a' }), { op: 'add' });
+  assert.deepEqual(sl.menuKey({ name: 'A', shift: true }), { op: 'add' });
+  assert.deepEqual(sl.menuKey({ name: 'd' }), { op: 'delete-selected' });
+  assert.deepEqual(sl.menuKey({ name: '3' }), { op: 'open', n: 3 });
+  assert.deepEqual(sl.menuKey({ name: 'q' }), { op: 'quit' });
+  assert.deepEqual(sl.menuKey({ name: 'escape' }), { op: 'quit' });
+  assert.deepEqual(sl.menuKey({ name: 'c', ctrl: true }), { op: 'quit' });
+  assert.deepEqual(sl.menuKey({ name: 'up' }), { op: 'move', delta: -1 });
+  assert.deepEqual(sl.menuKey({ name: 'k' }), { op: 'move', delta: -1 });
+  assert.deepEqual(sl.menuKey({ name: 'down' }), { op: 'move', delta: 1 });
+  assert.deepEqual(sl.menuKey({ name: 'j' }), { op: 'move', delta: 1 });
+  assert.deepEqual(sl.menuKey({ name: 'return' }), { op: 'open-selected' });
+  assert.deepEqual(sl.menuKey({ name: 'enter' }), { op: 'open-selected' });
+  assert.deepEqual(sl.menuKey({ name: 'x' }), { op: 'noop' });
+  assert.deepEqual(sl.menuKey(null), { op: 'noop' });
 });
 
 test('clampView keeps cursor and window coherent', () => {
@@ -110,11 +105,9 @@ test('clampView keeps cursor and window coherent', () => {
 });
 
 test('keyFooter only advertises actionable keys', () => {
-  assert.equal(sl.keyFooter(false, 0), 'a add · q close');
-  assert.equal(sl.keyFooter(false, 1), 'enter open · a add · d delete · q close');
-  assert.equal(sl.keyFooter(false, 3), '↑/↓ select · enter open · 1..3 open · a add · d delete · q close');
-  assert.equal(sl.keyFooter(true, 3), 'delete which? 1..3 · enter = selected · esc cancels');
-  assert.equal(sl.keyFooter(true, 1), 'delete which? 1 · enter = selected · esc cancels');
+  assert.equal(sl.keyFooter(0), 'a add · q close');
+  assert.equal(sl.keyFooter(1), 'enter open · a add · d delete · q close');
+  assert.equal(sl.keyFooter(3), '↑/↓ select · enter open · 1..3 open · a add · d delete · q close');
 });
 
 const makeStub = (dir, out, fail) => {
@@ -265,20 +258,21 @@ test('panel line mode: stored >9 shows scroll indicator instead of a dead end', 
   assert.doesNotMatch(res.stdout, /showing first 9/);
 });
 
-// --- popup frame rendering (cursor marker, armed digits, honest footer) ---
-test('panelFrame renders cursor marker, armed inverse digits, scroll hints', () => {
+// --- popup frame rendering (cursor marker, honest footer) ---
+test('panelFrame renders cursor marker, scroll hints, honest footer', () => {
   const links = [
     { title: 'A', url: 'https://a.dev' },
     { title: 'B', url: 'https://b.dev' },
   ];
   const frame = sl.panelFrame('w1', 'web', links, null, {
-    armed: true, keyMode: true, cursor: 1, windowStart: 0,
+    keyMode: true, cursor: 1, windowStart: 0,
   });
   assert.match(frame, /Space links — web /);
-  assert.match(frame, /delete which\? 1\.\.2 · enter = selected · esc cancels/);
-  assert.match(frame, /\x1b\[7m1\x1b\[27m\. ↳ A/);
-  assert.match(frame, /\x1b\[7m2\x1b\[27m\. ↳ B/);
+  assert.match(frame, /↳ A/);
+  assert.match(frame, /↳ B/);
   assert.match(frame, /› /);
+  assert.doesNotMatch(frame, /delete which/);   // no armed state
+  assert.doesNotMatch(frame, /\x1b\[7m/);        // no inverse digits
   const empty = sl.panelFrame('w1', 'web', [], null, { keyMode: true });
   assert.match(empty, /a add · q close/);
   assert.match(empty, /\(none yet\)/);
@@ -295,11 +289,10 @@ test('isTTY distinguishes pipes from ttys', () => {
   assert.equal(sl.isTTY(undefined), false);
 });
 test('menuKey: modified chords never act as bare letters', () => {
-  assert.deepEqual(sl.menuKey(false, { name: 'd', ctrl: true }), { op: 'quit' }); // EOF convention
-  assert.deepEqual(sl.menuKey(false, { name: 'a', ctrl: true }), { op: 'noop' });
-  assert.deepEqual(sl.menuKey(false, { name: 'q', meta: true }), { op: 'noop' });
-  assert.deepEqual(sl.menuKey(false, { name: 'c', ctrl: true }), { op: 'quit' });
-  assert.deepEqual(sl.menuKey(true, { name: 'a', ctrl: true }), { op: 'disarm' });
+  assert.deepEqual(sl.menuKey({ name: 'd', ctrl: true }), { op: 'quit' }); // EOF convention
+  assert.deepEqual(sl.menuKey({ name: 'a', ctrl: true }), { op: 'noop' });
+  assert.deepEqual(sl.menuKey({ name: 'q', meta: true }), { op: 'noop' });
+  assert.deepEqual(sl.menuKey({ name: 'c', ctrl: true }), { op: 'quit' });
 });
 test('promptLine resolves with the typed line, not eof', async () => {
   const { PassThrough } = require('node:stream');
@@ -381,8 +374,8 @@ async function drivePanel(d, chunks, { links = null, mode = 'open' } = {}) {
     await tick();
     input.write(chunk);
   }
-  // Always close the panel: 'q' disarms when armed, so a second 'q' quits.
-  // Extra writes after the driver already exited just sit in the buffer.
+  // Always close the panel: a single 'q' quits now; the extra write
+  // just sits in the buffer after the driver already exited.
   for (const chunk of ['q', 'q']) {
     await tick();
     input.write(chunk);
@@ -392,23 +385,25 @@ async function drivePanel(d, chunks, { links = null, mode = 'open' } = {}) {
   return { text: frames.join(''), frames, opened };
 }
 
-test('key mode: errors are transient, footer is honest, armed digits highlighted', async () => {
+test('key mode: errors are transient and d deletes the selected row in one keypress', async () => {
   const d = tmp();
   const { frames } = await drivePanel(d, ['9', 'd'], {
     links: [{ title: 'A', url: 'https://a.dev' }],
   });
   const errored = frames.find((f) => f.includes('✗ no link 9'));
   assert.ok(errored, 'out-of-range digit shows a gentle error');
-  const armed = frames.find((f) => f.includes('delete which?'));
-  assert.ok(armed, 'd arms delete mode');
-  assert.doesNotMatch(armed, /no link 9/);          // error cleared by the next key
-  assert.match(armed, /delete which\? 1 · enter = selected · esc cancels/);
-  assert.match(armed, /\x1b\[7m1\x1b\[27m\. ↳ A/); // armed digit highlighted
+  // remove() renders the instant list update before it sets its status line,
+  // so the ✓ frame is located by content, not by adjacency to the error.
+  assert.doesNotMatch(frames[frames.indexOf(errored) + 1], /no link 9/); // error cleared by the next key
+  const ok = frames.findIndex((f) => f.includes('✓ deleted — ↳ A'));
+  assert.ok(ok > 0, 'd deleted the ›-selected row in one keypress');
+  assert.match(frames[ok], /\(none yet\)/);        // list is empty: no second key needed
+  assert.equal(sl.readState(d).w1.links.length, 0);
 });
 
 test('key mode: unknown keys are silent, status clears on next key', async () => {
   const d = tmp();
-  const { frames } = await drivePanel(d, ['x', 'd', '2', 'j'], {
+  const { frames } = await drivePanel(d, ['x', 'j', 'd', 'j'], {
     links: [
       { title: 'A', url: 'https://a.dev' },
       { title: 'B', url: 'https://b.dev' },
@@ -419,7 +414,7 @@ test('key mode: unknown keys are silent, status clears on next key', async () =>
   assert.ok(ok > 0, 'delete shows a success status');
   assert.doesNotMatch(frames[ok + 1], /✓ deleted/); // status clears on next key
   assert.equal(sl.readState(d).w1.links.length, 1);
-  assert.equal(sl.readState(d).w1.links[0].title, 'A'); // digit 2 deleted the second row
+  assert.equal(sl.readState(d).w1.links[0].title, 'A'); // ›-selected row deleted
 });
 
 test('key mode: enter opens the selected link', async () => {
@@ -445,18 +440,25 @@ test('key mode: scrolling makes legacy >9 links reachable and deletable', async 
   assert.ok(scrolled, 'window scrolled by one');
   assert.deepEqual(opened, ['https://x.dev/9']);     // 10th link, previously unreachable
   const d2 = tmp();
-  const r2 = await drivePanel(
-    d2,
-    [...Array(11).fill('j'), 'd', '9'],
-    { links: twelve },
-  );
+  const r2 = await drivePanel(d2, [...Array(11).fill('j'), 'd'], { links: twelve });
+  const d3 = tmp();
+  const r3 = await drivePanel(d3, [...Array(11).fill('j'), 'd', 'd'], { links: twelve });
   assert.equal(r2.opened.length, 0);
   const remaining = sl.readState(d2).w1.links;
   assert.equal(remaining.length, 11);
   assert.equal(remaining.some((l) => l.title === 't11'), false); // absolute 12th deleted
   assert.ok(r2.frames.some((f) => f.includes('✓ deleted — ↳ t11')));
+  // cursor clamps to the new last row after a delete: the next d removes t10
+  assert.ok(r3.frames.some((f) => f.includes('✓ deleted — ↳ t10')));
 });
 
+test('key mode: d on an empty list shows the add hint', async () => {
+  const d = tmp();
+  const { frames } = await drivePanel(d, ['\n', 'd'], { links: [], mode: 'open' });
+  const hinted = frames.find((f) => f.includes('✗ no links yet — press a to add'));
+  assert.ok(hinted, 'd with no links nudges toward add');
+  assert.doesNotMatch(hinted, /deleted/);
+});
 test('key mode: URL-first add with derived title suggestion', async () => {
   const d = tmp();
   const { text } = await drivePanel(d, ['example.com/x\n', '\n'], { mode: 'add', links: [] });

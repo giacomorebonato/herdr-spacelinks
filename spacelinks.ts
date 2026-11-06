@@ -46,12 +46,9 @@ export interface PendingTarget {
 /** Discriminated menu action — the op narrows which extra fields exist. */
 export type MenuAction =
   | { op: 'open'; n: number }
-  | { op: 'delete'; n: number }
   | { op: 'move'; delta: number }
   | { op: 'add' }
   | { op: 'quit' }
-  | { op: 'arm' }
-  | { op: 'disarm' }
   | { op: 'open-selected' }
   | { op: 'delete-selected' }
   | { op: 'noop' };
@@ -113,7 +110,6 @@ export type AskFn = (prompt: string) => Promise<PromptAnswer>;
 export type AddFlowResult = 'added' | 'cancelled' | 'failed' | 'eof';
 
 export interface PanelFrameOptions {
-  armed?: boolean;
   keyMode?: boolean;
   status?: string | null;
   cursor?: number;
@@ -128,7 +124,6 @@ export interface PanelCtx {
   output: PanelOutput;
   error: string | null;
   status: string | null;
-  armed: boolean;
   keyMode: boolean;
   cursor: number;
   windowStart: number;
@@ -342,24 +337,18 @@ export function removeLink(links: Link[], n: number): LinkMutation {
 // Menu state machine + view
 // ---------------------------------------------------------------------------
 
-// Single-key menu state machine. Unknown keys are silent no-ops: the footer
-// already documents the contract, and a scary error for every stray keypress
-// made the popup feel punitive. Digits address the *visible window* rows;
-// the driver maps them to absolute link indices.
-export function menuKey(armed: boolean, key: KeyLike | null | undefined): MenuAction {
+// Single-key menu state machine — no armed states. Unknown keys are silent
+// no-ops: the footer already documents the contract, and a scary error for
+// every stray keypress made the popup feel punitive. Digits open the
+// *visible window* row (the driver maps them to absolute link indices);
+// `d` deletes the `›`-selected row.
+export function menuKey(key: KeyLike | null | undefined): MenuAction {
   const name = key && key.name ? String(key.name).toLowerCase() : '';
   if (key && key.ctrl && (name === 'c' || name === 'd')) return { op: 'quit' };
-  if (key && (key.ctrl || key.meta)) return armed ? { op: 'disarm' } : { op: 'noop' };
-  if (armed) {
-    if (/^[1-9]$/.test(name)) return { op: 'delete', n: parseInt(name, 10) };
-    if (name === 'enter' || name === 'return') return { op: 'delete-selected' };
-    if (name === 'up' || name === 'k') return { op: 'move', delta: -1 };
-    if (name === 'down' || name === 'j') return { op: 'move', delta: 1 };
-    return { op: 'disarm' };
-  }
+  if (key && (key.ctrl || key.meta)) return { op: 'noop' };
   if (name === 'q' || name === 'escape') return { op: 'quit' };
   if (name === 'a') return { op: 'add' };
-  if (name === 'd') return { op: 'arm' };
+  if (name === 'd') return { op: 'delete-selected' };
   if (name === 'up' || name === 'k') return { op: 'move', delta: -1 };
   if (name === 'down' || name === 'j') return { op: 'move', delta: 1 };
   if (name === 'enter' || name === 'return') return { op: 'open-selected' };
@@ -515,10 +504,10 @@ function digitsHint(n: number): string {
 }
 
 // The footer only advertises keys that can actually act on the current list —
-// no more "1..9 open" when three links exist.
-export function keyFooter(armed: boolean, visibleCount: number): string {
+// no more "1..9 open" when three links exist. `d` deletes the cursor row
+// directly, so there is no armed variant of the footer.
+export function keyFooter(visibleCount: number): string {
   if (visibleCount === 0) return 'a add · q close';
-  if (armed) return `delete which? ${digitsHint(visibleCount)} · enter = selected · esc cancels`;
   const parts: string[] = [];
   if (visibleCount > 1) parts.push('↑/↓ select');
   parts.push('enter open');
@@ -535,7 +524,6 @@ export function panelFrame(
   opts: PanelFrameOptions = {},
 ): string {
   const {
-    armed = false,
     keyMode = false,
     status = null,
     cursor = 0,
@@ -554,15 +542,14 @@ export function panelFrame(
     visible.forEach((link, i) => {
       const digit = String(i + 1);
       const marker = windowStart + i === cursor ? '›' : ' ';
-      const shown = armed ? `\x1b[7m${digit}\x1b[27m` : digit;
-      const text = `${shown}. ↳ ${link.title}`;
+      const text = `${digit}. ↳ ${link.title}`;
       rows.push(`${marker} \x1b]8;;${link.url}\x1b\\${text}\x1b]8;;\x1b\\`);
     });
     const below = links.length - (windowStart + visible.length);
     if (below > 0) rows.push(`  \x1b[2m↓ ${below} below\x1b[22m`);
   }
   rows.push('');
-  rows.push(keyMode ? keyFooter(armed, visibleCount) : LINE_FOOTER);
+  rows.push(keyMode ? keyFooter(visibleCount) : LINE_FOOTER);
   if (status) rows.push(`✓ ${status}`);
   if (error) rows.push(`✗ ${error}`);
   rows.push('');
@@ -617,12 +604,11 @@ export function createPanelCtx({
 }: PanelCtxArgs): PanelCtx {
   const ctx: PanelCtx = {
     dir, state, workspaceId, label, output,
-    error: null, status: null, armed: false,
+    error: null, status: null,
     keyMode: false, cursor: 0, windowStart: 0,
     links: () => linksFor(state, workspaceId),
     render: () => {
       output.write(panelFrame(workspaceId, label, ctx.links(), ctx.error, {
-        armed: ctx.armed,
         keyMode: ctx.keyMode,
         status: ctx.status,
         cursor: ctx.cursor,
@@ -895,14 +881,12 @@ async function keyDriver(
     ctx.render();
     const key = await nextKey();
     if (key === null) { cooked(); return; }
-    const act = menuKey(ctx.armed, key);
+    const act = menuKey(key);
     // Status and error lines are transient: they describe the *previous*
     // action and disappear on the next keypress. This also fixes the stale
     // error bug where one bad key left a red message on every later frame.
     ctx.status = null;
     ctx.error = null;
-    if (act.op === 'arm') ctx.armed = true;
-    else if (act.op !== 'move') ctx.armed = false;
     if (act.op === 'quit') { cooked(); return; }
     if (act.op === 'add') {
       await addFlow(ctx, askOrQuit);
@@ -927,11 +911,11 @@ async function keyDriver(
       if (ctx.open(ctx.cursor + 1)) { cooked(); return; }
       continue;
     }
-    if (act.op === 'delete') {
-      ctx.remove(ctx.windowStart + act.n);
-      continue;
-    }
     if (act.op === 'delete-selected') {
+      if (ctx.links().length === 0) {
+        ctx.error = 'no links yet — press a to add';
+        continue;
+      }
       ctx.remove(ctx.cursor + 1);
       continue;
     }
