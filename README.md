@@ -63,8 +63,48 @@ description = "add space link"
 The `prefix+alt+…` family is free in herdr's default keymap — the more
 obvious `prefix+1..9` belongs to `switch_tab`, so the alt layer is where
 plugin keys fit without remapping herdr. Pick any free key you like instead;
-only avoid `prefix+l` (navigate pane right). Both actions are also in the
-workspace right-click menu, and on the command line:
+only avoid `prefix+l` (navigate pane right).
+
+### Prefix-less keys
+
+Keys without the prefix work too: herdr treats a key like `ctrl+alt+o` as a
+direct terminal-mode shortcut that fires without entering prefix mode, from
+any pane, even while an app owns the keyboard. herdr's default keymap claims
+no direct chords besides `ctrl+v` (remote image paste, active only in
+`--remote` sessions), and herdr's config guide names explicit modified
+chords and function keys as the most reliable direct bindings.
+
+Suggested pair — `o` for open, `i` for insert. With `ctrl+alt` held on the
+left (pinky + thumb), the letter should come from the right hand: `i` and
+`o` sit a row up from home under the middle and ring fingers, so the chord
+is two easy presses. (`a` forces the same left pinky that holds ctrl to tap
+the key, and `m` is a bottom-row reach — both awkward in a chord.)
+
+```toml
+[[keys.command]]
+key = "ctrl+alt+o"
+type = "plugin_action"
+command = "spacelinks.open"
+description = "space links"
+
+[[keys.command]]
+key = "ctrl+alt+i"
+type = "plugin_action"
+command = "spacelinks.add"
+description = "add space link"
+```
+
+Strict home-row alternates: `ctrl+alt+j` / `ctrl+alt+k` for open/add (the
+strongest fingers, with the small cost of reading as vim movement), or a
+spare function key like `f8` (keep clear of `f1`/`f11`, which terminals
+claim for help and fullscreen). Because a direct chord fires on every
+keypress in every pane, stay on `ctrl+alt+letter` — nearly untouched
+territory for tty apps — and don't bind bare keys such as `o` or `i` (they'd
+vanish from normal typing) or `ctrl+v`, which herdr and most terminals
+reserve for paste.
+
+Both actions are also in the workspace right-click menu, and on the command
+line:
 
 ```bash
 herdr plugin action invoke spacelinks.add
