@@ -166,7 +166,7 @@ uses.
 
 ```bash
 bun install        # dev-only toolchain: typescript + @types/node
-bun run typecheck  # tsc --noEmit (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes)
+bun run typecheck  # bun check — Bun's built-in typechecker (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes)
 bun run test       # rebuild + node --test test/spacelinks.test.js
 ```
 
