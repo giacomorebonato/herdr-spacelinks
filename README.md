@@ -19,8 +19,8 @@ default browser.
 ## Requirements
 
 - herdr ≥ 0.9.3
-- Node.js ≥ 18 (`node` on `PATH`) — runtime only; nothing else is needed to
-  use the plugin, since the compiled `spacelinks.js` ships with the repo
+- Bun (`bun` on `PATH`) — herdr runs the TypeScript source, `spacelinks.ts`,
+  directly with it; there is no compiled artifact
 
 ## Install
 
@@ -195,23 +195,19 @@ plugin state dir printed by `herdr plugin config-dir spacelinks`.
 The source of truth is `spacelinks.ts` (strict TypeScript: discriminated menu
 actions, typed CLI/stream boundaries, and runtime guards for every JSON input
 — state files are hand-editable, so `links.json` is validated before use).
-`bun run build` compiles it to plain CommonJS `spacelinks.js`, which is what
-herdr runs and what the tests exercise; the compiled artifact is committed so
-installing from GitHub still needs only Node.
+herdr runs it directly with Bun — no build step, no compiled artifact.
 
 **Bun is the package manager and script runner** (`bun.lock` is the lockfile;
-never add a `package-lock.json`). The test suite itself runs on `node --test`,
-because it exercises the compiled artifact against the same runtime herdr
-uses.
+never add a `package-lock.json`). The test suite runs on `bun test`, because
+it exercises the `spacelinks.ts` source against the same runtime herdr uses.
 
 ```bash
-bun install        # dev-only toolchain: typescript + @types/node
+bun install        # dev-only toolchain: @types/node
 bun run typecheck  # bun check — Bun's built-in typechecker (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes)
-bun run test       # rebuild + node --test test/spacelinks.test.js
+bun run test       # bun test test/spacelinks.test.js — requires spacelinks.ts directly
 ```
 
-After editing `spacelinks.ts`, always run `bun run build` and commit the
-regenerated `spacelinks.js` together with the source change.
+After editing `spacelinks.ts`, run `bun run typecheck` and `bun run test`.
 
 ## Notes
 

@@ -9,13 +9,13 @@ platforms = ["macos", "linux", "windows"]
 id = "open"
 title = "Space links"
 contexts = ["workspace"]
-command = ["node", "spacelinks.js", "open"]
+command = ["bun", "spacelinks.ts", "open"]
 
 [[actions]]
 id = "add"
 title = "Add space link"
 contexts = ["workspace"]
-command = ["node", "spacelinks.js", "add"]
+command = ["bun", "spacelinks.ts", "add"]
 
 [[panes]]
 id = "panel"
@@ -23,11 +23,11 @@ title = "Space links"
 placement = "popup"
 width = "70%"
 height = 20
-command = ["node", "spacelinks.js", "panel"]
+command = ["bun", "spacelinks.ts", "panel"]
 
 [[startup]]
-command = ["node", "spacelinks.js", "apply"]
+command = ["bun", "spacelinks.ts", "apply"]
 
 [[events]]
 on = "workspace.focused"
-command = ["node", "spacelinks.js", "refresh"]
+command = ["bun", "spacelinks.ts", "refresh"]

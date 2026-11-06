@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const sl = require('../spacelinks.js');
+const sl = require('../spacelinks.ts');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'sl-'));
 
@@ -220,7 +220,7 @@ const { spawnSync: cpSpawnSync } = require('node:child_process');
 const ROOT = path.join(__dirname, '..');
 
 function runPanel(d, input, extraEnv = {}) {
-  return cpSpawnSync(process.execPath, [path.join(ROOT, 'spacelinks.js'), 'panel'], {
+  return cpSpawnSync(process.execPath, [path.join(ROOT, 'spacelinks.ts'), 'panel'], {
     input,
     encoding: 'utf8',
     env: { ...process.env, HERDR_PLUGIN_STATE_DIR: d, ...extraEnv },

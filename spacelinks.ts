@@ -4,10 +4,9 @@
 // Plugin per docs/superpowers/specs/2026-11-05-spacelinks-design.md
 // and the 2026-11-06 TUI smoothing addendum.
 //
-// TypeScript is the source of truth; `npm run build` compiles this file to
-// plain CommonJS `spacelinks.js`, which is what herdr runs (`node spacelinks.js`).
-// The compiled artifact is committed so the plugin still installs from GitHub
-// with zero runtime dependencies and no Bun/tsc on the user's machine.
+// TypeScript is the source of truth; herdr runs it directly with Bun
+// (`bun spacelinks.ts` per herdr-plugin.toml) — no build step and no
+// compiled artifact. Plugin users need Bun on `PATH`.
 
 import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -990,7 +989,7 @@ export function refreshFocused(
 }
 
 // ---------------------------------------------------------------------------
-// CLI dispatch (herdr invokes: node spacelinks.js <command>)
+// CLI dispatch (herdr invokes: bun spacelinks.ts <command>)
 // ---------------------------------------------------------------------------
 
 if (require.main === module) {
