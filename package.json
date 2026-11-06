@@ -5,11 +5,10 @@
   "description": "Per-Space web links in the herdr sidebar",
   "scripts": {
     "typecheck": "bun check",
-    "build": "tsc",
+    "build": "bun build ./spacelinks.ts --outfile ./spacelinks.js --target node --format cjs",
     "test": "bun run build && node --test test/spacelinks.test.js"
   },
   "devDependencies": {
-    "@types/node": "^26.6.6",
-    "typescript": "^7.0.2"
+    "@types/node": "^26.6.6"
   }
 }

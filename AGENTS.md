@@ -11,6 +11,9 @@ Check here first; update it when a durable decision changes.
   `bun run <script>`, `bunx` for one-off binaries.
 - `bun.lock` is the only lockfile. Never commit a `package-lock.json`, and
   remove one if it ever appears.
+- The build and type check are bun-native: `bun run typecheck` runs
+  `bun check`, and `bun run build` runs `bun build` (Bun's bundler) —
+  the npm `typescript` package is not a devDependency.
 - `package.json` still exists (bun reads it for scripts/devDependencies).
 - The test suite runs on `node --test` even when invoked via
   `bun run test` — deliberately: the tests exercise the compiled
@@ -22,9 +25,14 @@ Check here first; update it when a durable decision changes.
   `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, discriminated
   unions, runtime guards for all untrusted JSON: `links.json`,
   `pending.json`, plugin context, workspace-list output, focus events).
-- `bun run build` compiles it to plain CommonJS `spacelinks.js`
-  (committed). **Always commit the regenerated `spacelinks.js` together
-  with the `spacelinks.ts` change.**
+- `bun run build` bundles it to plain CommonJS `spacelinks.js`
+  (committed): `bun build ./spacelinks.ts --outfile ./spacelinks.js
+  --target node --format cjs`. Both flags are load-bearing — bun's
+  bundler defaults to esm/browser, which plain Node cannot load as
+  `spacelinks.js`. **Always commit the regenerated `spacelinks.js`
+  together with the `spacelinks.ts` change.**
+- `bun build` does not type-check; `bun run typecheck` (`bun check`)
+  is the separate required gate.
 - herdr runs `node spacelinks.js <subcommand>` per the manifest
   (`herdr-plugin.toml`); plugin users need only Node ≥ 18 — zero runtime
   dependencies, no Bun on the user's machine.
