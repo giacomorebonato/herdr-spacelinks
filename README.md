@@ -102,27 +102,41 @@ the new link limit.)
 ## Use
 
 1. Focus the Space you want links for and press `prefix+m`. The popup lists
-   that Space's links, numbered and Ctrl-clickable.
-2. One keypress per action, no Enter needed:
+   that Space's links with a `›` cursor on the selected row; rows are
+   numbered and Ctrl-clickable.
+2. One keypress per action:
 
    | Key | Action |
    |---|---|
-   | `1`–`9` | open that link in the default browser (popup closes) |
-   | `a` | add — prompts `Title (Enter = derive from URL):` then `URL:` |
-   | `d` then a digit | delete that link (any other key cancels) |
+   | `↑`/`↓` (or `k`/`j`) | move the cursor |
+   | `Enter` | open the selected link in the default browser (popup closes) |
+   | `1`–`9` | quick-open that row of the visible window (popup closes) |
+   | `a` | add — prompts `URL:` first, then `Title [<derived>]:` |
+   | `d` then a digit or `Enter` | delete that row / the selected row; any other key cancels |
    | `q` / `Esc` / `Ctrl+C` / `Ctrl+D` | close the popup |
 
+   While delete is armed, the row digits are highlighted. The footer only
+   advertises keys that can act (`1..3 open` when three links exist, no
+   digits at all with one link), and stray keypresses are ignored silently
+   instead of printing an error. Add/delete confirmations (`✓ added`,
+   `✓ deleted`) show until the next keypress, then clear.
+
 3. `prefix+alt+a` skips the list and jumps straight into the add form —
-   capture is press binding, paste URL, Enter. A Space with no links also
-   opens straight into the add form; cancelling it (empty URL) lands on the
-   list.
+   capture is press binding, paste URL, Enter, Enter (the title prompt comes
+   pre-filled with the URL-derived title; typing over it customizes). A
+   Space with no links also opens straight into the add form; cancelling it
+   (empty URL) lands on the list.
 4. Ctrl-click a link title in the popup also opens it (herdr opens pane URLs
    in the default browser when `ui.mouse_capture` is on, the default).
-5. Empty title derives from the URL; schemeless input gets `https://`
-   prepended; at most 9 links per Space (the number keys only reach 9).
+5. Schemeless input gets `https://` prepended; at most 9 links per Space
+   (the sidebar token rows and the add cap both stop at 9). The popup lists
+   9 rows per window with `↑ N above` / `↓ N below` hints, so links stored
+   by older versions beyond the 9-row sidebar cap remain visible, openable,
+   and deletable by scrolling.
 
 If the popup's input is not a terminal (piped), commands fall back to
-line mode: type `a`, a number, `d <n>`, or `q` and press Enter.
+line mode: type `a`, a number, `d <n>`, or `q` and press Enter. Line mode
+addresses links by absolute position, so `d 12` still manages legacy link 12.
 
 ## Where the links live, and when they come back
 
