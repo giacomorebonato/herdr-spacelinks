@@ -1150,11 +1150,8 @@ export async function panelMain(opts: PanelMainOptions = {}): Promise<void> {
   return lineDriver(ctx, { input, output }, mode);
 }
 
-export function refreshFocused(
-  env: NodeJS.ProcessEnv,
-  dir: string,
-  run: RunFn,
-): RefreshResult {
+/** The workspace a refresh/sync invocation targets: event JSON, then env fallback. */
+function focusedWorkspaceId(env: NodeJS.ProcessEnv): string | null {
   let ev: unknown = null;
   try {
     ev = JSON.parse(env['HERDR_PLUGIN_EVENT_JSON'] || '{}');
@@ -1168,12 +1165,39 @@ export function refreshFocused(
         ? ev.workspace.workspace_id
         : null);
   }
-  wsId = wsId ?? env['HERDR_WORKSPACE_ID'] ?? null;
+  return wsId ?? env['HERDR_WORKSPACE_ID'] ?? null;
+}
+
+export function refreshFocused(
+  env: NodeJS.ProcessEnv,
+  dir: string,
+  run: RunFn,
+): RefreshResult {
+  const wsId = focusedWorkspaceId(env);
   if (!wsId) return { ok: true, skipped: 'no workspace id' };
   const state = readState(dir);
   if (!state[wsId]) return { ok: true, skipped: 'no links stored' };
   reportTokens(wsId, linksFor(state, wsId), run);
   return { ok: true };
+}
+
+/** Refresh hook body: republish stored links, then best-effort PR sync. */
+export function refreshMain(
+  env: NodeJS.ProcessEnv,
+  dir: string,
+  run: RunFn,
+  exec: ExecFn = execCmd,
+): RefreshResult {
+  const result = refreshFocused(env, dir, run);
+  const wsId = focusedWorkspaceId(env);
+  if (wsId) {
+    try {
+      syncWorkspacePrs(dir, wsId, { run, exec });
+    } catch (err) {
+      console.error(`spacelinks sync: ${errorMessage(err)}`);
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1214,7 +1238,18 @@ if (require.main === module) {
       openFromContext('add');
     }
     if (cmd === 'refresh') {
-      refreshFocused(process.env, stateDir(), herdrRun);
+      refreshMain(process.env, stateDir(), herdrRun);
+      process.exit(0);
+    }
+    if (cmd === 'sync') {
+      const target = resolveSyncTarget(process.env, herdrRun);
+      if (target.sync && target.workspaceId) {
+        try {
+          syncWorkspacePrs(stateDir(), target.workspaceId, { run: herdrRun, exec: execCmd });
+        } catch (err) {
+          console.error(`spacelinks sync: ${errorMessage(err)}`);
+        }
+      }
       process.exit(0);
     }
     if (cmd === 'panel') {

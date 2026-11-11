@@ -17,6 +17,12 @@ title = "Add space link"
 contexts = ["workspace"]
 command = ["bun", "spacelinks.ts", "add"]
 
+[[actions]]
+id = "sync"
+title = "Sync PR links"
+contexts = ["workspace"]
+command = ["bun", "spacelinks.ts", "sync"]
+
 [[panes]]
 id = "panel"
 title = "Space links"
@@ -31,3 +37,7 @@ command = ["bun", "spacelinks.ts", "apply"]
 [[events]]
 on = "workspace.focused"
 command = ["bun", "spacelinks.ts", "refresh"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["bun", "spacelinks.ts", "sync"]

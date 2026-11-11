@@ -669,3 +669,37 @@ test('persistAndReport renders before the herdr report in key mode', () => {
   assert.deepEqual(log.slice(-2), ['render', 'report']);
   assert.deepEqual(sl.readState(d).w1.links, [{ title: 'A', url: 'https://a.dev' }]);
 });
+
+// --- PR sync wiring: refresh hook + sync subcommand ---
+
+test('refreshMain republishes then syncs the same workspace, sync errors swallowed', async () => {
+  const d = tmp();
+  sl.writeState(d, { w1: { label: 'l', links: [{ title: 'A', url: 'https://a.dev' }] } });
+  const calls = [];
+  const run = (args) => {
+    calls.push(args.join(' '));
+    if (args[0] === 'pane' && args[1] === 'list') {
+      return { status: 0, stdout: JSON.stringify({ result: { type: 'pane_list', panes: [{ cwd: '/repo' }] } }), stderr: '' };
+    }
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const exec = () => { throw new Error('boom'); };   // gh exploding must not break refresh
+  const r = await sl.refreshMain({ HERDR_PLUGIN_EVENT_JSON: '{"workspace_id":"w1"}' }, d, run, exec);
+  assert.equal(r.ok, true);
+  assert.ok(calls.some((c) => c.includes('report-metadata')));
+  assert.ok(calls.some((c) => c.includes('pane list')));
+});
+
+test('CLI sync subcommand: resolves context and runs sync (smoke)', () => {
+  const d = tmp();
+  const res = cpSpawnSync(process.execPath, [path.join(ROOT, 'spacelinks.ts'), 'sync'], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HERDR_PLUGIN_STATE_DIR: d,
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: 'wS' }),
+      HERDR_BIN_PATH: process.env.HERDR_BIN_PATH || 'herdr',
+    },
+  });
+  assert.equal(res.status, 0, res.stderr);   // sync never exits non-zero on soft failures
+});
