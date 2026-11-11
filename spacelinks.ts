@@ -307,6 +307,12 @@ export function tokenValue(title: string): string {
   return cap(`↳ ${title}`, 80);
 }
 
+/** Repo name from a GitHub git remote (https, scp-style, or ssh://) — null otherwise. */
+export function githubRepoFromRemote(remote: string): string | null {
+  const m = /github\.com[/:][^/]+\/([^/]+?)(?:\.git)?\/?$/i.exec(String(remote || '').trim());
+  return m ? (m[1] ?? null) : null;
+}
+
 const MAX_LINKS = 9;      // sidebar rows + add cap
 const CLEAR_TOKENS = 14;  // legacy configs may still reference 14 token rows
 const WINDOW = 9;         // popup rows per frame; digits address these

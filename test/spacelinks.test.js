@@ -44,6 +44,16 @@ test('tokenValue caps at 80 code points and prefixes glyph', () => {
   assert.equal(Array.from(sl.tokenValue('x'.repeat(100))).length, 80);
 });
 
+test('githubRepoFromRemote: https, scp-style, ssh forms; .git stripped; non-github null', () => {
+  assert.equal(sl.githubRepoFromRemote('https://github.com/acme/widget.git'), 'widget');
+  assert.equal(sl.githubRepoFromRemote('git@github.com:acme/widget.git'), 'widget');
+  assert.equal(sl.githubRepoFromRemote('ssh://git@github.com/acme/widget.git'), 'widget');
+  assert.equal(sl.githubRepoFromRemote('https://github.com/acme/widget'), 'widget');
+  assert.equal(sl.githubRepoFromRemote('https://gitlab.com/acme/widget.git'), null);
+  assert.equal(sl.githubRepoFromRemote(''), null);
+  assert.equal(sl.githubRepoFromRemote('/Users/me/dev/widget'), null);
+});
+
 test('addLink normalizes, derives title, caps at 9', () => {
   const r = sl.addLink([], '', 'github.com/org/repo');
   assert.deepEqual(r.links, [{ title: 'github.com/org/repo', url: 'https://github.com/org/repo' }]);
