@@ -703,3 +703,55 @@ test('CLI sync subcommand: resolves context and runs sync (smoke)', () => {
   });
   assert.equal(res.status, 0, res.stderr);   // sync never exits non-zero on soft failures
 });
+
+// --- shim/gh: opt-in instant-at-creation wrapper ---
+
+test('shim helpers: isPrCreate and realGhPath skip the shim dir', () => {
+  const shim = require('../shim/gh');
+  assert.equal(shim.isPrCreate(['pr', 'create', '--fill']), true);
+  assert.equal(shim.isPrCreate(['pr', 'view']), false);
+  assert.equal(shim.isPrCreate([]), false);
+  const selfDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shimself-')); // shim's own dir — its gh must be skipped
+  fs.writeFileSync(path.join(selfDir, 'gh'), '#!/bin/sh\nexit 99\n');
+  const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shimreal-'));
+  fs.writeFileSync(path.join(realDir, 'gh'), '#!/bin/sh\nexit 0\n');
+  assert.equal(shim.realGhPath(`${selfDir}:${realDir}`, path.join(selfDir, 'gh')), path.join(realDir, 'gh'));
+  assert.equal(shim.realGhPath('', path.join(selfDir, 'gh')), null);
+});
+
+test('shim passthrough: non-pr-create runs real gh unchanged', () => {
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'shimgh-'));
+  fs.writeFileSync(path.join(fakeBin, 'gh'), '#!/bin/sh\necho "argv: $@"\nexit 7\n');
+  fs.chmodSync(path.join(fakeBin, 'gh'), 0o755);
+  const res = cpSpawnSync(process.execPath, [path.join(ROOT, 'shim', 'gh'), '--version'], {
+    env: { ...process.env, PATH: `${fakeBin}${path.delimiter}${process.env.PATH}` },
+    encoding: 'utf8',
+  });
+  assert.equal(res.status, 7);
+  assert.match(res.stdout, /argv: --version/);   // output forwarded byte-identically
+});
+
+test('notifySpacelinks sends the invoke line and reads the ack', async () => {
+  const net = require('node:net');
+  const sockPath = path.join(os.tmpdir(), `slshim-${Date.now()}.sock`);
+  const seen = [];
+  const server = net.createServer((c) => {
+    c.on('data', (buf) => {
+      seen.push(buf.toString());
+      const id = JSON.parse(buf.toString()).id;
+      c.write(JSON.stringify({ id, result: { type: 'plugin_action_invoked' } }) + '\n');
+      c.end();
+    });
+  });
+  await new Promise((ok) => server.listen(sockPath, ok));
+  const shim = require('../shim/gh');
+  const ok = await shim.notifySpacelinks(sockPath, 'wB');
+  assert.equal(ok, true);
+  const line = JSON.parse(seen[0]);
+  assert.equal(line.method, 'plugin.action.invoke');
+  assert.equal(line.params.action_id, 'spacelinks.sync');
+  assert.equal(line.params.context.workspace_id, 'wB');
+  server.close();
+  // dead socket → false, no throw
+  assert.equal(await shim.notifySpacelinks('/nonexistent.sock', 'wB'), false);
+});
