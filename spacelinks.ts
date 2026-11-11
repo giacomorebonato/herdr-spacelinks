@@ -100,6 +100,9 @@ export interface CliResult {
 export type RunFn = (args: string[]) => CliResult;
 export type OpenUrlFn = (url: string) => void;
 
+/** Synchronous external-command runner (git/gh); injectable for tests. */
+export type ExecFn = (bin: string, args: string[], opts: { cwd?: string }) => CliResult;
+
 export interface PromptAnswer {
   eof: boolean;
   answer: string;
@@ -418,6 +421,10 @@ export function herdrRun(args: string[], opts: { env?: NodeJS.ProcessEnv } = {})
   });
 }
 
+export function execCmd(bin: string, args: string[], opts: { cwd?: string } = {}): CliResult {
+  return spawnSync(bin, args, { encoding: 'utf8', ...opts });
+}
+
 export function reportTokens(workspaceId: string, links: Link[], run: RunFn): void {
   const { sets, clears } = planReport(links);
   const args = ['workspace', 'report-metadata', workspaceId, '--source', 'plugin:spacelinks'];
@@ -484,6 +491,30 @@ export function workspaceRepoDirs(workspaceId: string, run: RunFn): string[] {
     }
   }
   return dirs;
+}
+
+/** The open PR for the checked-out branch of `dir` — {title: repo, url} or null. */
+export function findPrForDir(dir: string, exec: ExecFn): { title: string; url: string } | null {
+  const remote = exec('git', ['remote', 'get-url', 'origin'], { cwd: dir });
+  if (remote.status !== 0) return null;
+  const repo = githubRepoFromRemote(remote.stdout);
+  if (!repo) return null;
+  const branchRes = exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir });
+  if (branchRes.status !== 0) return null;
+  const branch = branchRes.stdout.trim();
+  if (!branch || branch === 'HEAD') return null; // detached
+  const gh = exec('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--limit', '10'], { cwd: dir });
+  if (gh.status !== 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(gh.stdout);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  const first = parsed[0];
+  if (!isRecord(first) || typeof first['url'] !== 'string' || !first['url']) return null;
+  return { title: repo, url: first['url'] };
 }
 
 export function openAction(

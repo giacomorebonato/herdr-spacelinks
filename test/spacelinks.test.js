@@ -193,6 +193,51 @@ test('workspaceRepoDirs: dedupes cwd+foreground_cwd, empty on failure', () => {
   const junk = () => ({ status: 0, stdout: '{"nope":1}', stderr: '' });
   assert.deepEqual(sl.workspaceRepoDirs('w1', junk), []);
 });
+
+const mkExec = (table) => (bin, args, opts) => {
+  const hit = table.find((t) => t.match(bin, args, opts));
+  return hit ? hit.res : { status: 127, stdout: '', stderr: 'no such' };
+};
+
+test('findPrForDir: branch PR found → {repo, url}; gh args include --head', () => {
+  const calls = [];
+  const exec = (bin, args, opts) => {
+    calls.push([bin, args, opts && opts.cwd]);
+    if (args[0] === 'remote') return { status: 0, stdout: 'git@github.com:acme/widget.git\n', stderr: '' };
+    if (args[0] === 'rev-parse') return { status: 0, stdout: 'feat/thing\n', stderr: '' };
+    if (args[0] === 'pr') return { status: 0, stdout: '[{"url":"https://github.com/acme/widget/pull/42"}]\n', stderr: '' };
+    return { status: 1, stdout: '', stderr: '' };
+  };
+  assert.deepEqual(sl.findPrForDir('/repo', exec), { title: 'widget', url: 'https://github.com/acme/widget/pull/42' });
+  const ghCall = calls.find((c) => c[0] === 'gh');
+  assert.deepEqual(ghCall[2], '/repo');
+  assert.ok(ghCall[1].join(' ').includes('--head feat/thing'));
+  assert.ok(ghCall[1].join(' ').includes('--state open'));
+});
+
+test('findPrForDir skips: non-github origin, detached HEAD, gh failure, empty list, git failure', () => {
+  const mk = (remoteOut, branchOut, ghOut) => mkExec([
+    { match: (b, a) => a[0] === 'remote', res: remoteOut },
+    { match: (b, a) => a[0] === 'rev-parse', res: branchOut },
+    { match: (b, a) => a[0] === 'pr', res: ghOut },
+  ]);
+  assert.equal(sl.findPrForDir('/r', mk({ status: 0, stdout: 'https://gitlab.com/x/y.git\n', stderr: '' }, { status: 0, stdout: 'main\n', stderr: '' }, { status: 0, stdout: '[]\n', stderr: '' })), null);
+  assert.equal(sl.findPrForDir('/r', mk({ status: 0, stdout: 'git@github.com:a/b.git\n', stderr: '' }, { status: 0, stdout: 'HEAD\n', stderr: '' }, { status: 0, stdout: '[]\n', stderr: '' })), null);
+  assert.equal(sl.findPrForDir('/r', mk({ status: 0, stdout: 'git@github.com:a/b.git\n', stderr: '' }, { status: 0, stdout: 'feat/x\n', stderr: '' }, { status: 1, stdout: '', stderr: 'no auth' })), null);
+  assert.equal(sl.findPrForDir('/r', mk({ status: 0, stdout: 'git@github.com:a/b.git\n', stderr: '' }, { status: 0, stdout: 'feat/x\n', stderr: '' }, { status: 0, stdout: '[]\n', stderr: '' })), null);
+  assert.equal(sl.findPrForDir('/r', mk({ status: 1, stdout: '', stderr: 'no repo' }, { status: 0, stdout: 'main\n', stderr: '' }, { status: 0, stdout: '[]\n', stderr: '' })), null);
+});
+
+test('findPrForDir guards gh JSON: corrupt or non-array entries → null', () => {
+  const mk = (ghStdout) => mkExec([
+    { match: (b, a) => a[0] === 'remote', res: { status: 0, stdout: 'git@github.com:a/b.git\n', stderr: '' } },
+    { match: (b, a) => a[0] === 'rev-parse', res: { status: 0, stdout: 'feat/x\n', stderr: '' } },
+    { match: (b, a) => a[0] === 'pr', res: { status: 0, stdout: ghStdout, stderr: '' } },
+  ]);
+  assert.equal(sl.findPrForDir('/r', mk('{"oops')), null);
+  assert.equal(sl.findPrForDir('/r', mk('[{"u":1}]')), null);
+  assert.equal(sl.findPrForDir('/r', mk('[{"url":123}]')), null);
+});
 test('applyAll with empty state never calls herdr', () => {
   const d = tmp();
   const stub = makeStub(d, LIST);
