@@ -238,6 +238,59 @@ test('findPrForDir guards gh JSON: corrupt or non-array entries → null', () =>
   assert.equal(sl.findPrForDir('/r', mk('[{"u":1}]')), null);
   assert.equal(sl.findPrForDir('/r', mk('[{"url":123}]')), null);
 });
+
+const syncExec = (prUrl) => (bin, args) => {
+  if (args[0] === 'remote') return { status: 0, stdout: 'git@github.com:acme/widget.git\n', stderr: '' };
+  if (args[0] === 'rev-parse') return { status: 0, stdout: 'feat/x\n', stderr: '' };
+  if (args[0] === 'pr') return { status: 0, stdout: JSON.stringify(prUrl ? [{ url: prUrl }] : []) + '\n', stderr: '' };
+  return { status: 1, stdout: '', stderr: '' };
+};
+
+test('syncWorkspacePrs adds the PR link, reports tokens, stamps debounce', () => {
+  const d = tmp();
+  let reported = 0;
+  const run = (args) => { if (args.includes('report-metadata')) reported++; return { status: 0, stdout: '', stderr: '' }; };
+  const r = sl.syncWorkspacePrs(d, 'w1', {
+    run, dirs: ['/repo'],
+    exec: syncExec('https://github.com/acme/widget/pull/42'),
+    now: () => 1_000_000,
+  });
+  assert.deepEqual(r, { added: 1, skipped: false });
+  assert.deepEqual(sl.readState(d).w1.links, [{ title: 'widget', url: 'https://github.com/acme/widget/pull/42' }]);
+  assert.equal(reported, 1);
+  assert.equal(sl.readSyncTimes(d).w1, 1_000_000);
+});
+
+test('syncWorkspacePrs debounces within 60s and dedupes stored URLs without re-report', () => {
+  const d = tmp();
+  const exec = syncExec('https://github.com/acme/widget/pull/42');
+  const run = () => ({ status: 0, stdout: '', stderr: '' });
+  const first = sl.syncWorkspacePrs(d, 'w1', { run, exec, dirs: ['/repo'], now: () => 1_000_000 });
+  const second = sl.syncWorkspacePrs(d, 'w1', { run, exec, dirs: ['/repo'], now: () => 1_000_000 + 59_000 });
+  const third = sl.syncWorkspacePrs(d, 'w1', { run, exec, dirs: ['/repo'], now: () => 1_000_000 + 61_000 });
+  assert.deepEqual(first, { added: 1, skipped: false });
+  assert.deepEqual(second, { added: 0, skipped: true });
+  assert.deepEqual(third, { added: 0, skipped: false });   // URL already stored → no add, but attempted
+  assert.equal(sl.readState(d).w1.links.length, 1);
+});
+
+test('syncWorkspacePrs respects the 9-link cap silently', () => {
+  const d = tmp();
+  let links = [];
+  for (let i = 0; i < 9; i++) links = sl.addLink(links, 't' + i, 'https://x.dev/' + i).links;
+  sl.writeState(d, { w1: { label: 'l', links } });
+  const run = () => ({ status: 0, stdout: '', stderr: '' });
+  const r = sl.syncWorkspacePrs(d, 'w1', { run, exec: syncExec('https://github.com/acme/widget/pull/9'), dirs: ['/repo'], now: () => 1_000_000 });
+  assert.deepEqual(r, { added: 0, skipped: false });
+  assert.equal(sl.readState(d).w1.links.length, 9);
+});
+
+test('readSyncTimes: missing → {}, corrupt → {}', () => {
+  const d = tmp();
+  assert.deepEqual(sl.readSyncTimes(d), {});
+  fs.writeFileSync(path.join(d, 'prsync.json'), '{oops');
+  assert.deepEqual(sl.readSyncTimes(d), {});
+});
 test('applyAll with empty state never calls herdr', () => {
   const d = tmp();
   const stub = makeStub(d, LIST);

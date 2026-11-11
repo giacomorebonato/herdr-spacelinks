@@ -289,6 +289,42 @@ export function writeState(dir: string, state: LinksState): void {
   fs.renameSync(tmp, file);
 }
 
+// --- PR sync debounce state (separate file; links.json schema untouched) ---
+
+const SYNC_FILE = 'prsync.json';
+
+export const SYNC_DEBOUNCE_MS = 60_000;
+
+export function readSyncTimes(dir: string): Record<string, number> {
+  const file = path.join(dir, SYNC_FILE);
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw err;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!isRecord(parsed)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(parsed)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
+}
+
+export function writeSyncTimes(dir: string, times: Record<string, number>): void {
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, `${SYNC_FILE}.tmp`);
+  fs.writeFileSync(tmp, `${JSON.stringify(times, null, 2)}\n`);
+  fs.renameSync(tmp, path.join(dir, SYNC_FILE));
+}
+
 export function linksFor(state: LinksState, workspaceId: string): Link[] {
   const entry = state[workspaceId];
   return entry && Array.isArray(entry.links) ? entry.links : [];
@@ -515,6 +551,46 @@ export function findPrForDir(dir: string, exec: ExecFn): { title: string; url: s
   const first = parsed[0];
   if (!isRecord(first) || typeof first['url'] !== 'string' || !first['url']) return null;
   return { title: repo, url: first['url'] };
+}
+
+/** Sync a workspace's branch PR into its spacelinks — debounced, silent on failure. */
+export function syncWorkspacePrs(
+  dir: string,
+  workspaceId: string,
+  opts: { run: RunFn; exec: ExecFn; now?: () => number; dirs?: string[] },
+): { added: number; skipped: boolean } {
+  const now = opts.now ?? Date.now;
+  const times = readSyncTimes(dir);
+  if (now() - (times[workspaceId] ?? 0) < SYNC_DEBOUNCE_MS) {
+    return { added: 0, skipped: true };
+  }
+  const state = readState(dir);
+  const dirs = opts.dirs ?? workspaceRepoDirs(workspaceId, opts.run);
+  const links = linksFor(state, workspaceId);
+  const seenUrls = new Set(links.map((l) => l.url));
+  let current = links;
+  let added = 0;
+  for (const repoDir of dirs) {
+    const pr = findPrForDir(repoDir, opts.exec);
+    if (!pr || seenUrls.has(pr.url)) continue;
+    const result = addLink(current, pr.title, pr.url);
+    if (!result.ok) break; // cap reached — stop collecting
+    current = result.links;
+    seenUrls.add(pr.url);
+    added += 1;
+  }
+  if (added > 0) {
+    state[workspaceId] = { label: state[workspaceId]?.label ?? workspaceId, links: current };
+    writeState(dir, state);
+    try {
+      reportTokens(workspaceId, current, opts.run);
+    } catch (err) {
+      console.error(`spacelinks sync: report failed: ${errorMessage(err)}`);
+    }
+  }
+  times[workspaceId] = now();
+  writeSyncTimes(dir, times);
+  return { added, skipped: false };
 }
 
 export function openAction(
