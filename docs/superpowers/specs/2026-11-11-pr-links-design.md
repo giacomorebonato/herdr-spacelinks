@@ -108,6 +108,12 @@ popup, paste URL), and the PR URL is already printed in the pane.
 - README: optional install (`cp shim/gh ~/.local/bin/gh`, dir on PATH
   ahead of real gh), what it does, how to remove.
 
+> Revision (2026-11-11, plan): the shipped shim detects the created PR
+> via `gh pr view --json url` after a successful `pr create` instead of
+> regexing output — output capture would break `gh pr create`'s
+> interactive TTY prompts. stdio stays fully inherited. Same trigger,
+> same notify, same silent-failure contract.
+
 ## Left to the builder
 
 - Verify `pane.agent_status_changed` event JSON shape at implementation

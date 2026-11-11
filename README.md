@@ -180,6 +180,43 @@ If the popup's input is not a terminal (piped), commands fall back to
 line mode: type `a`, a number, `d <n>`, or `q` and press Enter. Line mode
 addresses links by absolute position, so `d 12` still manages legacy link 12.
 
+## PR links
+
+When the branch checked out in a Space has an open GitHub PR, that PR is
+added to the Space's links automatically — titled with the repo name
+(`↳ herdr-spacelinks`), deduped by URL, capped at the usual 9 links.
+
+When it syncs:
+
+- **On focus** — entering a Space re-syncs it (at most once per 60 s per Space).
+- **On agent turn end** — when a detected agent in the Space reports idle or
+  done, that Space syncs. A PR opened mid-turn appears when the turn ends.
+- **Manually** — the workspace right-click menu has "Sync PR links".
+
+Sync is best-effort and silent: no `gh`, no `gh` auth, a non-GitHub origin,
+a detached HEAD, or no open PR for the branch all just skip. It needs the
+[`gh` CLI](https://cli.github.com/) authenticated as you. The first open PR
+found for the branch wins; merged/closed PRs are never pruned — delete them
+with `d` like any other link. `~/.local/state/herdr/plugins/spacelinks/prsync.json`
+stores only debounce timestamps.
+
+### Instant PR links (optional `gh` shim)
+
+The sync above lands the link when you next focus the Space or the agent's
+turn ends. For the moment a PR is created, install the `gh` shim:
+
+```bash
+cp shim/gh ~/.local/bin/gh
+chmod +x ~/.local/bin/gh
+```
+
+Put it in any PATH directory that comes **before** the real `gh`
+(`~/.local/bin` usually does). The shim is a transparent passthrough — it
+runs the real `gh` for every invocation with output untouched — and only
+after a successful `gh pr create`, and only inside herdr panes, asks herdr
+to sync that Space's links. It never changes `gh` behavior or exit codes,
+and silently does nothing outside herdr. Remove it with `rm ~/.local/bin/gh`.
+
 ## Where the links live, and when they come back
 
 Links are stored per Space in the plugin state dir and re-applied when herdr
