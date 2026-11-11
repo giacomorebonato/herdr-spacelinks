@@ -191,6 +191,20 @@ function isPendingTarget(value: unknown): value is PendingTarget {
     && (mode === undefined || mode === 'open' || mode === 'add');
 }
 
+/** Structural subset of a `herdr pane list` response; cwd fields are optional. */
+export function isPaneListResult(
+  value: unknown,
+): value is { result: { panes: { cwd?: string; foreground_cwd?: string }[] } } {
+  if (!isRecord(value)) return false;
+  const result = value['result'];
+  if (!isRecord(result)) return false;
+  const panes = result['panes'];
+  if (!Array.isArray(panes)) return false;
+  return panes.every((p) => isRecord(p)
+    && (p['cwd'] === undefined || typeof p['cwd'] === 'string')
+    && (p['foreground_cwd'] === undefined || typeof p['foreground_cwd'] === 'string'));
+}
+
 function isPluginContext(value: unknown): value is {
   workspace_id?: string;
   workspace_label?: string;
@@ -447,6 +461,29 @@ export function applyAll(dir: string, run: RunFn): { reported: number; failed: n
   }
   writeState(dir, state);
   return { reported, failed };
+}
+
+/** Deduped cwd + foreground_cwd values across a workspace's panes — [] on any failure. */
+export function workspaceRepoDirs(workspaceId: string, run: RunFn): string[] {
+  const res = run(['pane', 'list', '--workspace', workspaceId]);
+  if (res.status !== 0) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(res.stdout);
+  } catch {
+    return [];
+  }
+  if (!isPaneListResult(parsed)) return [];
+  const dirs: string[] = [];
+  const seen = new Set<string>();
+  for (const pane of parsed.result.panes) {
+    for (const dir of [pane.cwd, pane.foreground_cwd]) {
+      if (typeof dir !== 'string' || !dir || seen.has(dir)) continue;
+      seen.add(dir);
+      dirs.push(dir);
+    }
+  }
+  return dirs;
 }
 
 export function openAction(

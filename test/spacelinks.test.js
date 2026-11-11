@@ -164,6 +164,35 @@ test('applyAll counts failures without throwing', () => {
   delete process.env.HERDR_BIN_PATH;
   assert.deepEqual(result, { reported: 0, failed: 1 });
 });
+
+const paneListJson = (panes) => JSON.stringify({ id: 'x', result: { type: 'pane_list', panes } });
+
+test('isPaneListResult guards the untrusted pane list shape', () => {
+  assert.equal(sl.isPaneListResult(JSON.parse(paneListJson([{ pane_id: 'w1:p1', cwd: '/a' }]))), true);
+  assert.equal(sl.isPaneListResult(null), false);
+  assert.equal(sl.isPaneListResult({ result: { panes: 'nope' } }), false);
+  assert.equal(sl.isPaneListResult({ result: { panes: [{ cwd: 5 }] } }), false); // cwd must be a string when present
+});
+
+test('workspaceRepoDirs: dedupes cwd+foreground_cwd, empty on failure', () => {
+  const seen = [];
+  const run = (args) => {
+    seen.push(args.join(' '));
+    if (!args.includes('pane')) return { status: 0, stdout: '', stderr: '' };
+    return { status: 0, stdout: paneListJson([
+      { cwd: '/a', foreground_cwd: '/a/sub' },
+      { cwd: '/a' },
+      { foreground_cwd: '/b' },
+    ]), stderr: '' };
+  };
+  assert.deepEqual(sl.workspaceRepoDirs('w1', run), ['/a', '/a/sub', '/b']);
+  assert.ok(seen[0].includes('pane list'));
+  assert.ok(seen[0].includes('--workspace w1'));
+  const fail = (args) => ({ status: 1, stdout: '', stderr: 'x' });
+  assert.deepEqual(sl.workspaceRepoDirs('w1', fail), []);
+  const junk = () => ({ status: 0, stdout: '{"nope":1}', stderr: '' });
+  assert.deepEqual(sl.workspaceRepoDirs('w1', junk), []);
+});
 test('applyAll with empty state never calls herdr', () => {
   const d = tmp();
   const stub = makeStub(d, LIST);
