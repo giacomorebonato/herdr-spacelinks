@@ -197,7 +197,9 @@ Sync is best-effort and silent: no `gh`, no `gh` auth, a non-GitHub origin,
 a detached HEAD, or no open PR for the branch all just skip. It needs the
 [`gh` CLI](https://cli.github.com/) authenticated as you. The first open PR
 found for the branch wins; merged/closed PRs are never pruned — delete them
-with `d` like any other link. `~/.local/state/herdr/plugins/spacelinks/prsync.json`
+with `d` like any other link. The 60 s debounce bounds only the automated
+triggers (focus, agent turn end); the right-click "Sync PR links" action and
+the shim below are explicit intent and bypass it. `~/.local/state/herdr/plugins/spacelinks/prsync.json`
 stores only debounce timestamps.
 
 ### Instant PR links (optional `gh` shim)

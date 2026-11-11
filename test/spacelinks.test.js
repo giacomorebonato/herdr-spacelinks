@@ -295,7 +295,7 @@ test('readSyncTimes: missing → {}, corrupt → {}', () => {
 const ctxEnv = (o) => ({ HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify(o) });
 
 test('resolveSyncTarget from action context JSON', () => {
-  assert.deepEqual(sl.resolveSyncTarget(ctxEnv({ workspace_id: 'wB' }), () => ({ status: 1, stdout: '', stderr: '' })), { workspaceId: 'wB', sync: true });
+  assert.deepEqual(sl.resolveSyncTarget(ctxEnv({ workspace_id: 'wB' }), () => ({ status: 1, stdout: '', stderr: '' })), { workspaceId: 'wB', sync: true, forced: true });
 });
 
 test('resolveSyncTarget from agent-status event JSON: idle/done sync, working does not', () => {
@@ -303,12 +303,12 @@ test('resolveSyncTarget from agent-status event JSON: idle/done sync, working do
   const idle = { pane_id: 'w1:p1', workspace_id: 'w1', agent_status: 'idle' };
   const working = { pane_id: 'w1:p1', workspace_id: 'w1', agent_status: 'working' };
   const run = () => ({ status: 0, stdout: '', stderr: '' });
-  assert.deepEqual(sl.resolveSyncTarget(ev(idle), run), { workspaceId: 'w1', sync: true });
-  assert.deepEqual(sl.resolveSyncTarget(ev(working), run), { workspaceId: 'w1', sync: false });
+  assert.deepEqual(sl.resolveSyncTarget(ev(idle), run), { workspaceId: 'w1', sync: true, forced: false });
+  assert.deepEqual(sl.resolveSyncTarget(ev(working), run), { workspaceId: 'w1', sync: false, forced: false });
   // status gate passes but pane lookup fails → null id, sync still attempted harmlessly
-  assert.deepEqual(sl.resolveSyncTarget(ev({ pane_id: 'w1:p1', status: 'done' }), run), { workspaceId: null, sync: true });
+  assert.deepEqual(sl.resolveSyncTarget(ev({ pane_id: 'w1:p1', status: 'done' }), run), { workspaceId: null, sync: true, forced: false });
   // unknown shape → attempt (debounce caps load)
-  assert.deepEqual(sl.resolveSyncTarget(ev({ something: 'else' }), run), { workspaceId: null, sync: true });
+  assert.deepEqual(sl.resolveSyncTarget(ev({ something: 'else' }), run), { workspaceId: null, sync: true, forced: false });
 });
 
 test('resolveSyncTarget: pane_id without workspace_id → pane get lookup; nothing → no sync', () => {
@@ -319,9 +319,21 @@ test('resolveSyncTarget: pane_id without workspace_id → pane get lookup; nothi
     return { status: 1, stdout: '', stderr: '' };
   };
   const ev = { HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ pane_id: 'w1:p1', agent_status: 'idle' }) };
-  assert.deepEqual(sl.resolveSyncTarget(ev, run), { workspaceId: 'wP', sync: true });
+  assert.deepEqual(sl.resolveSyncTarget(ev, run), { workspaceId: 'wP', sync: true, forced: false });
   const none = { HERDR_PLUGIN_EVENT_JSON: '', HERDR_PLUGIN_CONTEXT_JSON: '' };
-  assert.deepEqual(sl.resolveSyncTarget(none, () => ({ status: 0, stdout: '', stderr: '' })), { workspaceId: null, sync: false });
+  assert.deepEqual(sl.resolveSyncTarget(none, () => ({ status: 0, stdout: '', stderr: '' })), { workspaceId: null, sync: false, forced: false });
+});
+
+test('syncWorkspacePrs force bypasses the debounce window (manual action / shim intent)', () => {
+  const d = tmp();
+  const exec = syncExec('https://github.com/acme/widget/pull/42');
+  const run = () => ({ status: 0, stdout: '', stderr: '' });
+  const first = sl.syncWorkspacePrs(d, 'w1', { run, exec, dirs: ['/repo'], now: () => 1_000_000 });
+  const debounced = sl.syncWorkspacePrs(d, 'w1', { run, exec, dirs: ['/repo'], now: () => 1_000_000 + 10_000 });
+  const forced = sl.syncWorkspacePrs(d, 'w1', { run, exec, dirs: ['/repo'], now: () => 1_000_000 + 10_000, force: true });
+  assert.deepEqual(first, { added: 1, skipped: false });
+  assert.deepEqual(debounced, { added: 0, skipped: true });
+  assert.deepEqual(forced, { added: 0, skipped: false });   // attempted; URL already stored → no re-add
 });
 test('applyAll with empty state never calls herdr', () => {
   const d = tmp();

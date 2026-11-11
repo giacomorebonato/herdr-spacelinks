@@ -557,11 +557,13 @@ export function findPrForDir(dir: string, exec: ExecFn): { title: string; url: s
 export function syncWorkspacePrs(
   dir: string,
   workspaceId: string,
-  opts: { run: RunFn; exec: ExecFn; now?: () => number; dirs?: string[] },
+  opts: { run: RunFn; exec: ExecFn; now?: () => number; dirs?: string[]; force?: boolean },
 ): { added: number; skipped: boolean } {
   const now = opts.now ?? Date.now;
   const times = readSyncTimes(dir);
-  if (now() - (times[workspaceId] ?? 0) < SYNC_DEBOUNCE_MS) {
+  // The debounce bounds the *automated* hooks (focus, agent turn end);
+  // explicit intent (manual action, shim notify) bypasses it via force.
+  if (!opts.force && now() - (times[workspaceId] ?? 0) < SYNC_DEBOUNCE_MS) {
     return { added: 0, skipped: true };
   }
   const state = readState(dir);
@@ -637,7 +639,7 @@ function workspaceIdFromPane(paneId: string, run: RunFn): string | null {
 export function resolveSyncTarget(
   env: NodeJS.ProcessEnv,
   run: RunFn,
-): { workspaceId: string | null; sync: boolean } {
+): { workspaceId: string | null; sync: boolean; forced: boolean } {
   const ev = parseEnvJson(env, 'HERDR_PLUGIN_EVENT_JSON');
   if (ev) {
     // Gate on the new agent status: only turn ends (idle/done) sync. Unknown
@@ -646,19 +648,21 @@ export function resolveSyncTarget(
     const status = firstString(ev, ['agent_status', 'status', 'new_status']);
     const gated = status !== undefined && status !== 'idle' && status !== 'done';
     const workspaceId = firstString(ev, ['workspace_id']);
-    if (workspaceId !== undefined) return { workspaceId, sync: !gated };
-    if (gated) return { workspaceId: null, sync: false };
+    if (workspaceId !== undefined) return { workspaceId, sync: !gated, forced: false };
+    if (gated) return { workspaceId: null, sync: false, forced: false };
     const paneId = firstString(ev, ['pane_id']);
     if (paneId !== undefined) {
-      return { workspaceId: workspaceIdFromPane(paneId, run), sync: true };
+      return { workspaceId: workspaceIdFromPane(paneId, run), sync: true, forced: false };
     }
-    return { workspaceId: null, sync: true };
+    return { workspaceId: null, sync: true, forced: false };
   }
   const context = parseEnvJson(env, 'HERDR_PLUGIN_CONTEXT_JSON');
   if (isPluginContext(context) && typeof context.workspace_id === 'string') {
-    return { workspaceId: context.workspace_id, sync: true };
+    // Context JSON means the sync action: right-click menu or the gh shim.
+    // Explicit intent — bypass the debounce.
+    return { workspaceId: context.workspace_id, sync: true, forced: true };
   }
-  return { workspaceId: null, sync: false };
+  return { workspaceId: null, sync: false, forced: false };
 }
 
 export function openAction(
@@ -1245,7 +1249,11 @@ if (require.main === module) {
       const target = resolveSyncTarget(process.env, herdrRun);
       if (target.sync && target.workspaceId) {
         try {
-          syncWorkspacePrs(stateDir(), target.workspaceId, { run: herdrRun, exec: execCmd });
+          syncWorkspacePrs(stateDir(), target.workspaceId, {
+            run: herdrRun,
+            exec: execCmd,
+            force: target.forced,
+          });
         } catch (err) {
           console.error(`spacelinks sync: ${errorMessage(err)}`);
         }
