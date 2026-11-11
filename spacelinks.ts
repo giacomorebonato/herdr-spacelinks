@@ -593,6 +593,74 @@ export function syncWorkspacePrs(
   return { added, skipped: false };
 }
 
+// ---------------------------------------------------------------------------
+// Sync target resolution (action context vs agent-status event)
+// ---------------------------------------------------------------------------
+
+function firstString(rec: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = rec[key];
+    if (typeof value === 'string') return value;
+  }
+  return undefined;
+}
+
+function parseEnvJson(env: NodeJS.ProcessEnv, name: string): Record<string, unknown> | null {
+  const raw = env[name] || '';
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function workspaceIdFromPane(paneId: string, run: RunFn): string | null {
+  const res = run(['pane', 'get', paneId]);
+  if (res.status !== 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(res.stdout);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  const result = parsed['result'];
+  if (!isRecord(result)) return null;
+  const pane = result['pane'];
+  if (!isRecord(pane)) return null;
+  return typeof pane['workspace_id'] === 'string' ? pane['workspace_id'] : null;
+}
+
+/** Where and whether to sync: action context JSON or a pane.agent_status_changed event. */
+export function resolveSyncTarget(
+  env: NodeJS.ProcessEnv,
+  run: RunFn,
+): { workspaceId: string | null; sync: boolean } {
+  const ev = parseEnvJson(env, 'HERDR_PLUGIN_EVENT_JSON');
+  if (ev) {
+    // Gate on the new agent status: only turn ends (idle/done) sync. Unknown
+    // shapes still attempt — the 60 s debounce caps the load. The workspace id
+    // is resolved (cheap string field) even when gated; the pane lookup is not.
+    const status = firstString(ev, ['agent_status', 'status', 'new_status']);
+    const gated = status !== undefined && status !== 'idle' && status !== 'done';
+    const workspaceId = firstString(ev, ['workspace_id']);
+    if (workspaceId !== undefined) return { workspaceId, sync: !gated };
+    if (gated) return { workspaceId: null, sync: false };
+    const paneId = firstString(ev, ['pane_id']);
+    if (paneId !== undefined) {
+      return { workspaceId: workspaceIdFromPane(paneId, run), sync: true };
+    }
+    return { workspaceId: null, sync: true };
+  }
+  const context = parseEnvJson(env, 'HERDR_PLUGIN_CONTEXT_JSON');
+  if (isPluginContext(context) && typeof context.workspace_id === 'string') {
+    return { workspaceId: context.workspace_id, sync: true };
+  }
+  return { workspaceId: null, sync: false };
+}
+
 export function openAction(
   dir: string,
   workspaceId: string,

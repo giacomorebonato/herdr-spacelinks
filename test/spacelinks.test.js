@@ -291,6 +291,38 @@ test('readSyncTimes: missing → {}, corrupt → {}', () => {
   fs.writeFileSync(path.join(d, 'prsync.json'), '{oops');
   assert.deepEqual(sl.readSyncTimes(d), {});
 });
+
+const ctxEnv = (o) => ({ HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify(o) });
+
+test('resolveSyncTarget from action context JSON', () => {
+  assert.deepEqual(sl.resolveSyncTarget(ctxEnv({ workspace_id: 'wB' }), () => ({ status: 1, stdout: '', stderr: '' })), { workspaceId: 'wB', sync: true });
+});
+
+test('resolveSyncTarget from agent-status event JSON: idle/done sync, working does not', () => {
+  const ev = (o) => ({ HERDR_PLUGIN_EVENT_JSON: JSON.stringify(o) });
+  const idle = { pane_id: 'w1:p1', workspace_id: 'w1', agent_status: 'idle' };
+  const working = { pane_id: 'w1:p1', workspace_id: 'w1', agent_status: 'working' };
+  const run = () => ({ status: 0, stdout: '', stderr: '' });
+  assert.deepEqual(sl.resolveSyncTarget(ev(idle), run), { workspaceId: 'w1', sync: true });
+  assert.deepEqual(sl.resolveSyncTarget(ev(working), run), { workspaceId: 'w1', sync: false });
+  // status gate passes but pane lookup fails → null id, sync still attempted harmlessly
+  assert.deepEqual(sl.resolveSyncTarget(ev({ pane_id: 'w1:p1', status: 'done' }), run), { workspaceId: null, sync: true });
+  // unknown shape → attempt (debounce caps load)
+  assert.deepEqual(sl.resolveSyncTarget(ev({ something: 'else' }), run), { workspaceId: null, sync: true });
+});
+
+test('resolveSyncTarget: pane_id without workspace_id → pane get lookup; nothing → no sync', () => {
+  const run = (args) => {
+    if (args[0] === 'pane' && args[1] === 'get') {
+      return { status: 0, stdout: JSON.stringify({ result: { pane: { workspace_id: 'wP', pane_id: 'w1:p1' } } }), stderr: '' };
+    }
+    return { status: 1, stdout: '', stderr: '' };
+  };
+  const ev = { HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ pane_id: 'w1:p1', agent_status: 'idle' }) };
+  assert.deepEqual(sl.resolveSyncTarget(ev, run), { workspaceId: 'wP', sync: true });
+  const none = { HERDR_PLUGIN_EVENT_JSON: '', HERDR_PLUGIN_CONTEXT_JSON: '' };
+  assert.deepEqual(sl.resolveSyncTarget(none, () => ({ status: 0, stdout: '', stderr: '' })), { workspaceId: null, sync: false });
+});
 test('applyAll with empty state never calls herdr', () => {
   const d = tmp();
   const stub = makeStub(d, LIST);
